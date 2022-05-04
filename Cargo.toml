@@ -9,3 +9,9 @@ edition = "2021"
 cc = "1.0.25"
 
 [dependencies]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

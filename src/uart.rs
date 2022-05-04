@@ -2,7 +2,6 @@ use core::{ptr, sync::atomic::Ordering};
 
 use crate::{param::UART0, PANICKED};
 
-
 const RHR: usize = 0;
 const THR: usize = 0;
 const IER: usize = 1;

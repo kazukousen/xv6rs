@@ -3,11 +3,9 @@ fn main() {
     println!("cargo:rerun-if-changed=src/entry.S");
     println!("cargo:rerun-if-changed=src/kernelvec.S");
 
-
     // use the `cc` crate to assemble the assembly file and statically link it.
     cc::Build::new()
         .file("src/entry.S")
         .file("src/kernelvec.S")
         .compile("asm");
 }
-

@@ -1,14 +1,13 @@
-pub mod mstatus;
-pub mod mepc;
-pub mod satp;
-pub mod medeleg;
-pub mod mideleg;
-pub mod sie;
-pub mod pmp;
-pub mod mhartid;
 pub mod clint;
-pub mod mscratch;
-pub mod mtvec;
+pub mod medeleg;
+pub mod mepc;
+pub mod mhartid;
+pub mod mideleg;
 pub mod mie;
+pub mod mscratch;
+pub mod mstatus;
+pub mod mtvec;
+pub mod pmp;
+pub mod satp;
+pub mod sie;
 pub mod tp;
-

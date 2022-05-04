@@ -1,6 +1,5 @@
 use core::arch::asm;
 
-
 #[inline]
 unsafe fn read() -> usize {
     let ret: usize;
@@ -33,4 +32,3 @@ pub unsafe fn intr_on(mode: MPPMode) {
     mstatus |= 1 << (mode as usize);
     write(mstatus);
 }
-

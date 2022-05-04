@@ -1,7 +1,6 @@
 use core::arch::asm;
 
-use crate::{register, param::NCPU};
-
+use crate::{param::NCPU, register};
 
 #[no_mangle]
 static STACK0: [u8; 4096 * NCPU] = [0; 4096 * NCPU];
@@ -17,7 +16,7 @@ unsafe fn start() -> ! {
     // set mepc to main, for mret.
     extern "Rust" {
         fn main();
-}
+    }
     register::mepc::write(main as usize);
 
     // diable paging for now.

@@ -1,8 +1,7 @@
-use core::{fmt, sync::atomic::Ordering};
 use core::fmt::Write;
+use core::{fmt, sync::atomic::Ordering};
 
 use crate::{console, PANICKED};
-
 
 struct Print;
 

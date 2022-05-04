@@ -4,4 +4,3 @@ use core::arch::asm;
 pub unsafe fn write(v: usize) {
     asm!("csrw mepc, {}", in(reg) v);
 }
-
