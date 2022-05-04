@@ -1,10 +1,6 @@
 #![no_std]
 #![no_main]
 
-mod start;
-mod register;
-mod param;
-
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -14,5 +10,6 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 fn main() -> ! {
+    xv6rs::bootstrap();
     loop {}
 }
