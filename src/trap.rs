@@ -72,6 +72,8 @@ unsafe fn handle_trap(is_user: bool) {
             }
 
             register::sip::clear_ssip();
+
+            CPU_TABLE.my_cpu_mut().yield_process();
         }
         ScauseType::ExcEcall => {
             if !is_user {

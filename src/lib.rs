@@ -35,6 +35,7 @@ pub mod printf;
 mod proc;
 mod process;
 mod register;
+mod sleeplock;
 mod spinlock;
 mod start;
 mod trap;

@@ -2,9 +2,10 @@ use core::ptr;
 
 use crate::{
     param::NCPU,
-    proc::{Context, Proc, ProcState},
+    proc::{Context, Proc, ProcInner, ProcState},
     process::PROCESS_TABLE,
     register::{sstatus, tp},
+    spinlock::SpinLockGuard,
 };
 
 use array_macro::array;
@@ -59,7 +60,7 @@ impl CpuTable {
     }
 
     #[inline]
-    fn my_cpu_mut(&mut self) -> &mut Cpu {
+    pub fn my_cpu_mut(&mut self) -> &mut Cpu {
         let id = Self::cpu_id();
         &mut self.tables[id]
     }
@@ -104,6 +105,47 @@ impl Cpu {
             scheduler: Context::new(),
             noff: 0,
             intena: false,
+        }
+    }
+
+    /// Switch to cpu->scheduler, the per-CPU scheduler context that was saved at the point in the
+    /// past when `scheduler()` called `swtch` to switch to the process that's giving up the CPU.
+    /// Must hold only process's lock, must not hold another locks.
+    /// Saves and restores intena because intena is a property of this kernel thread, not this CPU.
+    /// Passing in and out a locked because we need to the lock during this function.
+    pub fn sched<'a>(
+        &mut self,
+        guard: SpinLockGuard<'a, ProcInner>,
+        ctx: *const Context,
+    ) -> SpinLockGuard<'a, ProcInner> {
+        if self.noff != 1 {
+            panic!("sched: multi locks");
+        }
+        if guard.state == ProcState::Running {
+            panic!("sched: proc is running");
+        }
+        if sstatus::intr_get() {
+            panic!("sched: interruptable");
+        }
+
+        let intena = self.intena;
+
+        extern "C" {
+            fn swtch(old: *const Context, new: *mut Context); // in swtch.S
+        }
+        unsafe {
+            swtch(ctx, &mut self.scheduler as *mut _);
+        }
+
+        self.intena = intena;
+
+        guard
+    }
+
+    pub unsafe fn yield_process(&mut self) {
+        if !self.proc.is_null() {
+            let proc = self.proc.as_mut().unwrap();
+            proc.yield_process();
         }
     }
 }

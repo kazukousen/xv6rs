@@ -8,7 +8,7 @@ use crate::{
     param::{KSTACK_SIZE, PAGESIZE},
     println,
     register::satp,
-    spinlock::SpinLock,
+    spinlock::{SpinLock, SpinLockGuard},
     trap::{user_trap_ret, usertrap},
 };
 
@@ -115,12 +115,15 @@ pub struct TrapFrame {
 
 pub struct ProcInner {
     pub state: ProcState,
+    // sleeping on channel
+    pub chan: usize,
 }
 
 impl ProcInner {
     const fn new() -> Self {
         Self {
             state: ProcState::Unused,
+            chan: 0,
         }
     }
 }
@@ -131,6 +134,7 @@ pub enum ProcState {
     Allocated,
     Runnable,
     Running,
+    Sleeping,
 }
 
 pub struct ProcData {
@@ -285,6 +289,38 @@ impl Proc {
             inner: SpinLock::new(ProcInner::new()),
             data: UnsafeCell::new(ProcData::new()),
         }
+    }
+
+    pub unsafe fn yield_process(&self) {
+        let mut locked = self.inner.lock();
+        if locked.state == ProcState::Running {
+            let ctx = &(*self.data.get()).context;
+            locked.state = ProcState::Runnable;
+            locked = CPU_TABLE.my_cpu_mut().sched(locked, ctx);
+        }
+        drop(locked);
+    }
+
+    /// Atomically release lock and sleep on chan.
+    /// The passed-in guard must not be the proc's guard to avoid deadlock.
+    pub fn sleep<'a, T>(&self, chan: usize, lk: SpinLockGuard<'a, T>) -> SpinLockGuard<'a, T> {
+        let mut guard = self.inner.lock();
+
+        // Go to sleep
+        guard.chan = chan;
+        guard.state = ProcState::Sleeping;
+
+        // unlock lk
+        let weaked = lk.weak();
+
+        unsafe {
+            let cpu = CPU_TABLE.my_cpu_mut();
+            guard = cpu.sched(guard, &(*self.data.get()).context);
+        }
+
+        // Tidy up.
+        guard.chan = 0;
+        weaked.lock()
     }
 }
 

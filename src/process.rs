@@ -1,6 +1,9 @@
+use core::ptr;
+
 use array_macro::array;
 
 use crate::{
+    cpu::CPU_TABLE,
     kvm::kvm_map,
     page_table::{Page, PteFlag, QuadPage},
     param::{KSTACK_SIZE, PAGESIZE, TRAMPOLINE},
@@ -81,5 +84,20 @@ impl ProcessTable {
             }
         }
         None
+    }
+
+    pub fn wakeup(&mut self, chan: usize) {
+        for p in self.tables.iter_mut() {
+            unsafe {
+                if ptr::eq(p, CPU_TABLE.my_proc()) {
+                    continue;
+                }
+            }
+            let mut guard = p.inner.lock();
+            if guard.state == ProcState::Sleeping && guard.chan == chan {
+                guard.state = ProcState::Runnable;
+            }
+            drop(guard);
+        }
     }
 }
