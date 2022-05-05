@@ -3,10 +3,12 @@ use core::{cell::UnsafeCell, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    cpu::CPU_TABLE,
+    cpu::{CpuTable, CPU_TABLE},
     page_table::{Page, PageTable, SinglePage},
     param::PAGESIZE,
+    register::satp,
     spinlock::SpinLock,
+    trap::{user_trap_ret, usertrap},
 };
 
 #[repr(C)]
@@ -181,6 +183,26 @@ impl ProcData {
     pub fn get_context(&mut self) -> *mut Context {
         &mut self.context as *mut _
     }
+
+    #[inline]
+    pub unsafe fn get_epc(&self) -> usize {
+        self.trapframe.as_ref().unwrap().epc
+    }
+
+    #[inline]
+    pub unsafe fn set_epc(&self, epc: usize) {
+        self.trapframe.as_mut().unwrap().epc = epc;
+    }
+
+    pub unsafe fn setup_user_ret(&self) -> usize {
+        let trapframe = self.trapframe.as_mut().unwrap();
+        trapframe.kernel_satp = satp::read();
+        trapframe.kernel_sp = self.kstack + PAGESIZE;
+        trapframe.kernel_trap = usertrap as usize;
+        trapframe.kernel_hartid = CpuTable::cpu_id();
+
+        self.page_table.as_ref().unwrap().as_satp()
+    }
 }
 
 pub struct Proc {
@@ -199,7 +221,7 @@ impl Proc {
 
 static mut FIRST: bool = true;
 
-pub unsafe fn forkret() -> ! {
+unsafe fn forkret() {
     CPU_TABLE.my_proc().inner.unlock();
     if FIRST {
         FIRST = false;
@@ -207,7 +229,7 @@ pub unsafe fn forkret() -> ! {
         crate::test_main();
     }
 
-    panic!("forkret must jump to user_trap_ret");
+    user_trap_ret();
 }
 
 /// first user program that calls exec("/init")

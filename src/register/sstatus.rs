@@ -43,3 +43,13 @@ pub fn intr_get() -> bool {
 pub fn is_from_supervisor() -> bool {
     unsafe { read() & 1 << Mode::SPP as usize != 0 }
 }
+
+#[inline]
+pub fn intr_on_to_user() {
+    unsafe {
+        let mut x = read();
+        x &= !(1 << Mode::SPP as usize); // clear SPP to 0 for user mode
+        x |= 1 << Mode::SPIE as usize; // enable interrupts in user mode
+        write(x);
+    }
+}

@@ -2,7 +2,7 @@ use core::arch::asm;
 
 use crate::{
     page_table::{PageTable, PteFlag},
-    param::{KERNBASE, PAGESIZE, PHYSTOP, QEMU_TEST0, UART0},
+    param::{KERNBASE, PAGESIZE, PHYSTOP, QEMU_TEST0, TRAMPOLINE, UART0},
     register::satp,
 };
 
@@ -45,6 +45,17 @@ pub unsafe fn init() {
         etext,
         PHYSTOP - etext,
         PteFlag::READ | PteFlag::WRITE,
+    );
+
+    extern "C" {
+        fn trampoline();
+    }
+
+    kvm_map(
+        TRAMPOLINE,
+        trampoline as usize,
+        PAGESIZE,
+        PteFlag::READ | PteFlag::EXEC,
     );
 }
 
