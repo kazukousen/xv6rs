@@ -15,7 +15,7 @@ unsafe fn start() -> ! {
 
     // set mepc to main, for mret.
     extern "Rust" {
-        fn main();
+        fn main(); // in main.rs/lib.rs(test)
     }
     register::mepc::write(main as usize);
 
@@ -58,7 +58,7 @@ unsafe fn timerinit() {
 
     // Set the machine-mode trap handler.
     extern "C" {
-        fn timervec();
+        fn timervec(); // in kernelvec.S
     }
     register::mtvec::write(timervec as usize);
 

@@ -27,7 +27,7 @@ pub unsafe fn init() {
     );
 
     extern "C" {
-        fn _etext();
+        fn _etext(); // see kernel.ld linker script
     }
     let etext = _etext as usize;
 

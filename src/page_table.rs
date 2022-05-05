@@ -62,7 +62,7 @@ impl PageTable {
     /// Allocate a new user page table.
     pub fn alloc_user_page_table(trapframe: usize) -> Option<Box<Self>> {
         extern "C" {
-            fn trampoline();
+            fn trampoline(); // in trampoline.S
         }
         let mut pgt = unsafe { Box::<Self>::try_new_zeroed().ok()?.assume_init() };
 
@@ -337,7 +337,7 @@ mod tests {
         let mut pgt = unsafe { pgt.unwrap().assume_init() };
 
         extern "C" {
-            fn _etext();
+            fn _etext(); // see kernel.ld linker script
         }
         let etext = _etext as usize;
 

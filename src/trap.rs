@@ -7,7 +7,7 @@ use crate::{
 /// set up to take exceptions and traps while in the kernel.
 pub unsafe fn init_hart() {
     extern "C" {
-        fn kernelvec();
+        fn kernelvec(); // in kernelvec.S
     }
     register::stvec::write(kernelvec as usize);
 }

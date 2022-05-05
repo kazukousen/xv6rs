@@ -16,7 +16,7 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 pub fn heap_init() {
     extern "C" {
-        fn end();
+        fn end(); // see kernel.ld linker script
     }
     let heap_start: usize = end as usize;
     unsafe {

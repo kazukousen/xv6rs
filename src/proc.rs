@@ -206,7 +206,8 @@ pub unsafe fn forkret() -> ! {
         #[cfg(test)]
         crate::test_main();
     }
-    loop {}
+
+    panic!("forkret must jump to user_trap_ret");
 }
 
 /// first user program that calls exec("/init")
