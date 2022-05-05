@@ -5,6 +5,8 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
+#![feature(allocator_api)]
+#![feature(new_uninit)]
 
 extern crate alloc;
 
@@ -22,6 +24,8 @@ use crate::{
 mod console;
 mod cpu;
 mod kalloc;
+mod kvm;
+mod page_table;
 mod param;
 pub mod printf;
 mod register;
@@ -38,10 +42,13 @@ pub unsafe fn bootstrap() {
         console::init();
         println!("Hello, xv6 in Rust!");
         kalloc::heap_init(); // physical memory allocator
+        kvm::init(); // create the kernel page table
+        kvm::init_hart(); // turn on paging
         STARTED.store(true, Ordering::SeqCst);
     } else {
         while !STARTED.load(Ordering::SeqCst) {}
         println!("hart {} starting...", cpu_id);
+        kvm::init_hart(); // turn on paging
     }
 }
 
