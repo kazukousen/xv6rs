@@ -31,6 +31,7 @@ mod kalloc;
 mod kvm;
 mod page_table;
 mod param;
+mod plic;
 pub mod printf;
 mod proc;
 mod process;
@@ -55,6 +56,8 @@ pub unsafe fn bootstrap() -> ! {
         kvm::init_hart(); // turn on paging
         PROCESS_TABLE.init(); // process table
         trap::init_hart(); // install kernel trap vector
+        plic::init(); // set up interrupt controller
+        plic::init_hart(cpu_id); // ask PLIC for device interrupts
         DISK.lock().init(); // emulated hard disk
         PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);
@@ -63,6 +66,7 @@ pub unsafe fn bootstrap() -> ! {
         println!("hart {} starting...", cpu_id);
         kvm::init_hart(); // turn on paging
         trap::init_hart(); // install kernel trap vector
+        plic::init_hart(cpu_id); // ask PLIC for device interrupts
     }
 
     CPU_TABLE.scheduler();

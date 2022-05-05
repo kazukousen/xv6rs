@@ -2,7 +2,8 @@ use core::mem;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
-    param::{TRAMPOLINE, TRAPFRAME},
+    param::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    plic,
     register::{self, scause::ScauseType},
     spinlock::SpinLock,
 };
@@ -74,6 +75,21 @@ unsafe fn handle_trap(is_user: bool) {
             register::sip::clear_ssip();
 
             CPU_TABLE.my_cpu_mut().yield_process();
+        }
+        ScauseType::IntSExt => {
+            // this is a supervisor external interrupt, via PLIC.
+            let irq = plic::claim();
+
+            match irq as usize {
+                UART0_IRQ => {}
+                VIRTIO0_IRQ => {}
+                0 => {}
+                _ => panic!("irq type={}", irq),
+            }
+
+            if irq > 0 {
+                plic::complete(irq);
+            }
         }
         ScauseType::ExcEcall => {
             if !is_user {

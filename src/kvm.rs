@@ -2,7 +2,10 @@ use core::arch::asm;
 
 use crate::{
     page_table::{PageTable, PteFlag},
-    param::{KERNBASE, PAGESIZE, PHYSTOP, QEMU_TEST0, TRAMPOLINE, UART0, VIRTIO0},
+    param::{
+        CLINT, CLINT_MAP_SIZE, KERNBASE, PAGESIZE, PHYSTOP, PLIC, PLIC_MAP_SIZE, QEMU_TEST0,
+        TRAMPOLINE, UART0, VIRTIO0,
+    },
     register::satp,
 };
 
@@ -19,6 +22,12 @@ pub unsafe fn init() {
 
     // virtio registers
     kvm_map(VIRTIO0, VIRTIO0, PAGESIZE, PteFlag::READ | PteFlag::WRITE);
+
+    // CLINT
+    kvm_map(CLINT, CLINT, CLINT_MAP_SIZE, PteFlag::READ | PteFlag::WRITE);
+
+    // PLIC
+    kvm_map(PLIC, PLIC, PLIC_MAP_SIZE, PteFlag::READ | PteFlag::WRITE);
 
     // for TEST
     #[cfg(test)]
