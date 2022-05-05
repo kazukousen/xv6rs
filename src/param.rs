@@ -32,3 +32,6 @@ pub const TRAMPOLINE: usize = MAXVA - PAGESIZE;
 //   TRAMPOLINE (the same page as in the kernel)
 // VirtAddr 0x3fffffe000
 pub const TRAPFRAME: usize = TRAMPOLINE - PAGESIZE;
+
+// virtio mmio interface
+pub const VIRTIO0: usize = 0x1000_1000;

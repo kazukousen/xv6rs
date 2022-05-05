@@ -22,6 +22,7 @@ use crate::{
     cpu::CpuTable,
     param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
     process::PROCESS_TABLE,
+    virtio::DISK,
 };
 
 mod console;
@@ -38,6 +39,7 @@ mod spinlock;
 mod start;
 mod trap;
 mod uart;
+mod virtio;
 
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
@@ -52,6 +54,7 @@ pub unsafe fn bootstrap() -> ! {
         kvm::init_hart(); // turn on paging
         PROCESS_TABLE.init(); // process table
         trap::init_hart(); // install kernel trap vector
+        DISK.lock().init(); // emulated hard disk
         PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);
     } else {
