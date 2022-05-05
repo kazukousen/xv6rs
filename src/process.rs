@@ -2,8 +2,8 @@ use array_macro::array;
 
 use crate::{
     kvm::kvm_map,
-    page_table::{Page, PteFlag, SinglePage},
-    param::{PAGESIZE, TRAMPOLINE},
+    page_table::{Page, PteFlag, QuadPage},
+    param::{KSTACK_SIZE, PAGESIZE, TRAMPOLINE},
     proc::{Proc, ProcState},
 };
 
@@ -23,22 +23,22 @@ impl ProcessTable {
     }
 
     /// Initialize the process table at boot time.
-    /// Allocate a page for each process's kernel stack.
+    /// Allocate pages for each process's kernel stack.
     pub fn init(&mut self) {
         for (i, p) in self.tables.iter_mut().enumerate() {
             // map kernel stacks beneath the trampoline,
             // each surrounded by invalid guard pages.
             let va = Self::calc_kstack_va(i);
-            let pa = unsafe { SinglePage::alloc_into_raw() }
+            let pa = unsafe { QuadPage::alloc_into_raw() }
                 .expect("process_table: insufficient memory for process's kernel stack");
-            unsafe { kvm_map(va, pa as usize, PAGESIZE, PteFlag::READ | PteFlag::WRITE) };
+            unsafe { kvm_map(va, pa as usize, KSTACK_SIZE, PteFlag::READ | PteFlag::WRITE) };
             p.data.get_mut().set_kstack(va);
         }
     }
 
     #[inline]
     fn calc_kstack_va(i: usize) -> usize {
-        TRAMPOLINE - ((i + 1) * 2 * PAGESIZE)
+        TRAMPOLINE - ((i + 1) * (KSTACK_SIZE + PAGESIZE))
     }
 
     fn alloc_proc(&mut self) -> Option<&mut Proc> {

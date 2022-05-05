@@ -61,7 +61,7 @@ pub unsafe extern "C" fn usertrap() {
     user_trap_ret();
 }
 
-unsafe fn handle_trap(_is_user: bool) {
+unsafe fn handle_trap(is_user: bool) {
     let scause = register::scause::get_type();
     match scause {
         ScauseType::IntSSoft => {
@@ -74,10 +74,11 @@ unsafe fn handle_trap(_is_user: bool) {
             register::sip::clear_ssip();
         }
         ScauseType::ExcEcall => {
-            if register::sstatus::is_from_supervisor() {
+            if !is_user {
                 panic!("kerneltrap: handling syscall");
             }
-            panic!("syscall unimplemented yet");
+            let pdata = CPU_TABLE.my_proc().data.get_mut();
+            pdata.syscall();
         }
         ScauseType::Unknown(v) => {
             panic!("handle_trap: scause {:#x}", v);

@@ -1,5 +1,6 @@
 use core::{
     alloc::AllocError,
+    cmp::min,
     ops::{Index, IndexMut},
     ptr,
 };
@@ -39,6 +40,13 @@ pub struct SinglePage {
 }
 
 impl Page for SinglePage {}
+
+#[repr(C, align(4096))]
+pub struct QuadPage {
+    data: [u8; PAGESIZE],
+}
+
+impl Page for QuadPage {}
 
 #[repr(C, align(4096))]
 pub struct PageTable {
@@ -227,6 +235,77 @@ impl PageTable {
 
         unsafe { Some(&mut page_table.as_mut().unwrap()[get_index(va, 0)]) }
     }
+
+    fn walk_addr(&self, va: usize) -> Result<usize, &'static str> {
+        match self.walk(va) {
+            Some(pte) => {
+                if !pte.is_valid() {
+                    Err("walk_addr: pte is not valid")
+                } else if !pte.is_user() {
+                    Err("walk_addr: pte is not user")
+                } else {
+                    Ok(pte.as_phys_addr())
+                }
+            }
+            None => Err("walk_addr: va is not mapped"),
+        }
+    }
+
+    /// Copy a null-terminated string from user to kernel.
+    /// Copy bytes to `dst` from virtual address `srcva` in a given page table,
+    /// until a '\0'.
+    pub fn copy_in_str(&self, dst: &mut [u8], mut srcva: usize) -> Result<usize, &'static str> {
+        let mut i = 0;
+
+        while i < dst.len() {
+            let va_base = align_down(srcva, PAGESIZE);
+            let distance = srcva - va_base;
+            let mut srcpa =
+                unsafe { (self.walk_addr(va_base)? as *const u8).offset(distance as isize) };
+
+            let mut count = min(PAGESIZE - distance, dst.len() - 1);
+            while count > 0 {
+                unsafe {
+                    dst[i] = ptr::read(srcpa);
+                    if dst[i] == 0 {
+                        return Ok(i);
+                    }
+                    srcpa = srcpa.add(1);
+                    i += 1;
+                    count -= 1;
+                }
+            }
+
+            srcva = va_base + PAGESIZE;
+        }
+
+        Err("copy_in_str: dst not enough space")
+    }
+
+    /// Copy from user to kernel.
+    /// Copy `count` bytes to `dst` from virtual address `srcva` in a given page table.
+    pub fn copy_in(
+        &self,
+        mut dst: *mut u8,
+        mut srcva: usize,
+        mut count: usize,
+    ) -> Result<(), &'static str> {
+        while count > 0 {
+            let va_base = align_down(srcva, PAGESIZE);
+            let distance = srcva - va_base;
+            let srcpa =
+                unsafe { (self.walk_addr(va_base)? as *const u8).offset(distance as isize) };
+
+            let n = min(PAGESIZE - distance, count);
+            unsafe {
+                ptr::copy_nonoverlapping(srcpa, dst, n);
+            }
+            count -= n;
+            dst = unsafe { dst.offset(n as isize) };
+            srcva = va_base + PAGESIZE;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for PageTable {
@@ -297,6 +376,11 @@ impl PageTableEntry {
     }
 
     #[inline]
+    pub fn is_user(&self) -> bool {
+        (self.data & PteFlag::USER.bits()) > 0
+    }
+
+    #[inline]
     fn set_addr(&mut self, addr: usize, perm: PteFlag) {
         self.data = addr | (perm | PteFlag::VALID).bits();
     }
@@ -326,6 +410,8 @@ impl PageTableEntry {
 
 #[cfg(test)]
 mod tests {
+    use core::mem;
+
     use crate::param::KERNBASE;
 
     use super::*;
@@ -357,5 +443,39 @@ mod tests {
             .expect("unmap_pages");
 
         drop(pgt);
+    }
+
+    #[test_case]
+    fn copy_in() {
+        let pgt = Box::<PageTable>::try_new_zeroed();
+        assert!(pgt.is_ok());
+        let mut pgt = unsafe { pgt.unwrap().assume_init() };
+
+        pgt.uvm_init(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0])
+            .expect("uvm_init");
+
+        let mut dst = [0u8; 10];
+        pgt.copy_in(dst.as_mut_ptr(), 5, 3 * mem::size_of::<u8>())
+            .expect("copy_in");
+        assert_eq!(&[6, 7, 8, 0, 0, 0, 0, 0, 0, 0], &dst);
+
+        pgt.unmap_pages(0, 1, true).expect("unmap_pages");
+    }
+
+    #[test_case]
+    fn copy_in_str() {
+        let pgt = Box::<PageTable>::try_new_zeroed();
+        assert!(pgt.is_ok());
+        let mut pgt = unsafe { pgt.unwrap().assume_init() };
+
+        pgt.uvm_init(&[b'i', b'n', b'i', b't', 0, 0, 0, 0, 0, 0])
+            .expect("uvm_init");
+
+        let mut dst = [0u8; 10];
+        let null_pos = pgt.copy_in_str(&mut dst, 0).expect("copy_in_str");
+        assert_eq!(4, null_pos);
+        assert_eq!(&[b'i', b'n', b'i', b't'], &dst[0..null_pos]);
+
+        pgt.unmap_pages(0, 1, true).expect("unmap_pages");
     }
 }

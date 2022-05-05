@@ -1,15 +1,20 @@
-use core::{cell::UnsafeCell, ptr};
+use core::{cell::UnsafeCell, mem, ptr};
 
 use alloc::boxed::Box;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
     page_table::{Page, PageTable, SinglePage},
-    param::PAGESIZE,
+    param::{KSTACK_SIZE, PAGESIZE},
+    println,
     register::satp,
     spinlock::SpinLock,
     trap::{user_trap_ret, usertrap},
 };
+
+mod syscall;
+
+use self::syscall::Syscall;
 
 #[repr(C)]
 pub struct Context {
@@ -164,7 +169,7 @@ impl ProcData {
     pub fn init_context(&mut self) {
         self.context.clear();
         self.context.ra = forkret as usize;
-        self.context.sp = self.kstack + PAGESIZE;
+        self.context.sp = self.kstack + KSTACK_SIZE;
     }
 
     pub fn user_init(&mut self) -> Result<(), &'static str> {
@@ -197,11 +202,75 @@ impl ProcData {
     pub unsafe fn setup_user_ret(&self) -> usize {
         let trapframe = self.trapframe.as_mut().unwrap();
         trapframe.kernel_satp = satp::read();
-        trapframe.kernel_sp = self.kstack + PAGESIZE;
+        trapframe.kernel_sp = self.kstack + KSTACK_SIZE;
         trapframe.kernel_trap = usertrap as usize;
         trapframe.kernel_hartid = CpuTable::cpu_id();
 
         self.page_table.as_ref().unwrap().as_satp()
+    }
+
+    pub fn syscall(&mut self) {
+        let trapframe = unsafe { self.trapframe.as_mut() }.unwrap();
+
+        // sepc points to the ecall instruction,
+        // but we want to return to the next instruction.
+        trapframe.epc += 4;
+
+        let num = trapframe.a7;
+        let ret = match num {
+            7 => self.sys_exec(),
+            _ => {
+                panic!("unknown syscall: {}", num);
+            }
+        };
+        trapframe.a0 = match ret {
+            Ok(ret) => ret,
+            Err(msg) => {
+                println!("syscall error: {}", msg);
+                -1isize as usize
+            }
+        };
+
+        panic!("syscall: no={}", num);
+    }
+
+    #[inline]
+    fn arg_str(&self, n: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
+        let addr = self.arg_raw(n)?;
+        self.fetch_str(addr, dst)
+    }
+
+    #[inline]
+    fn fetch_str(&self, addr: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
+        self.page_table.as_ref().unwrap().copy_in_str(dst, addr)
+    }
+
+    #[inline]
+    fn arg_raw(&self, n: usize) -> Result<usize, &'static str> {
+        let tf = unsafe { self.trapframe.as_ref().unwrap() };
+        match n {
+            0 => Ok(tf.a0),
+            1 => Ok(tf.a1),
+            2 => Ok(tf.a2),
+            3 => Ok(tf.a3),
+            4 => Ok(tf.a4),
+            5 => Ok(tf.a5),
+            _ => Err("arg raw"),
+        }
+    }
+
+    #[inline]
+    fn fetch_addr(&self, addr: usize) -> Result<usize, &'static str> {
+        if addr >= self.sz || addr + mem::size_of::<usize>() > self.sz {
+            return Err("fetch_addr size");
+        }
+        let mut dst: usize = 0;
+        self.page_table.as_ref().unwrap().copy_in(
+            &mut dst as *mut usize as *mut u8,
+            addr,
+            mem::size_of::<usize>(),
+        )?;
+        Ok(dst)
     }
 }
 
