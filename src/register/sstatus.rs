@@ -1,14 +1,14 @@
 use core::arch::asm;
 
 #[inline]
-unsafe fn read() -> usize {
+pub unsafe fn read() -> usize {
     let ret: usize;
     asm!("csrr {}, sstatus", out(reg) ret);
     ret
 }
 
 #[inline]
-unsafe fn write(v: usize) {
+pub unsafe fn write(v: usize) {
     asm!("csrw sstatus, {}", in(reg) v);
 }
 
@@ -36,5 +36,10 @@ pub unsafe fn intr_off() {
 #[inline]
 pub fn intr_get() -> bool {
     let x = unsafe { read() };
-    (x & Mode::SIE as usize) != 0
+    (x & 1 << Mode::SIE as usize) != 0
+}
+
+#[inline]
+pub fn is_from_supervisor() -> bool {
+    unsafe { read() & 1 << Mode::SPP as usize != 0 }
 }

@@ -36,6 +36,7 @@ mod process;
 mod register;
 mod spinlock;
 mod start;
+mod trap;
 mod uart;
 
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
@@ -50,12 +51,14 @@ pub unsafe fn bootstrap() -> ! {
         kvm::init(); // create the kernel page table
         kvm::init_hart(); // turn on paging
         PROCESS_TABLE.init(); // process table
+        trap::init_hart(); // install kernel trap vector
         PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);
     } else {
         while !STARTED.load(Ordering::SeqCst) {}
         println!("hart {} starting...", cpu_id);
         kvm::init_hart(); // turn on paging
+        trap::init_hart(); // install kernel trap vector
     }
 
     CPU_TABLE.scheduler();

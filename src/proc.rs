@@ -6,7 +6,6 @@ use crate::{
     cpu::CPU_TABLE,
     page_table::{Page, PageTable, SinglePage},
     param::PAGESIZE,
-    println,
     spinlock::SpinLock,
 };
 
