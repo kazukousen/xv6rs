@@ -57,6 +57,10 @@ impl<T: ?Sized> SpinLock<T> {
 
         cpu::pop_off();
     }
+
+    pub fn unlock(&self) {
+        self.release();
+    }
 }
 
 pub struct SpinLockGuard<'a, T: ?Sized> {

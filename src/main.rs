@@ -12,10 +12,7 @@ use xv6rs::{println, PANICKED};
 unsafe fn main() -> ! {
     #[cfg(test)]
     test_main();
-
     xv6rs::bootstrap();
-
-    loop {}
 }
 
 #[panic_handler]

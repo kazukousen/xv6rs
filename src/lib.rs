@@ -16,9 +16,12 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use cpu::CPU_TABLE;
+
 use crate::{
     cpu::CpuTable,
     param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
+    process::PROCESS_TABLE,
 };
 
 mod console;
@@ -28,6 +31,8 @@ mod kvm;
 mod page_table;
 mod param;
 pub mod printf;
+mod proc;
+mod process;
 mod register;
 mod spinlock;
 mod start;
@@ -36,7 +41,7 @@ mod uart;
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
 
-pub unsafe fn bootstrap() {
+pub unsafe fn bootstrap() -> ! {
     let cpu_id = CpuTable::cpu_id();
     if cpu_id == 0 {
         console::init();
@@ -44,12 +49,16 @@ pub unsafe fn bootstrap() {
         kalloc::heap_init(); // physical memory allocator
         kvm::init(); // create the kernel page table
         kvm::init_hart(); // turn on paging
+        PROCESS_TABLE.init(); // process table
+        PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);
     } else {
         while !STARTED.load(Ordering::SeqCst) {}
         println!("hart {} starting...", cpu_id);
         kvm::init_hart(); // turn on paging
     }
+
+    CPU_TABLE.scheduler();
 }
 
 #[no_mangle]
@@ -99,11 +108,6 @@ where
 #[no_mangle]
 unsafe fn main() -> ! {
     bootstrap();
-    let cpu_id = CpuTable::cpu_id();
-    if cpu_id == 0 {
-        test_main();
-    }
-    loop {}
 }
 
 #[cfg(test)]

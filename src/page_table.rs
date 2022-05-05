@@ -1,12 +1,13 @@
 use core::{
     alloc::AllocError,
     ops::{Index, IndexMut},
+    ptr,
 };
 
 use alloc::boxed::Box;
 use bitflags::bitflags;
 
-use crate::param::PAGESIZE;
+use crate::param::{PAGESIZE, TRAMPOLINE, TRAPFRAME};
 
 bitflags! {
     pub struct PteFlag: usize {
@@ -56,6 +57,58 @@ impl PageTable {
 
     pub fn as_satp(&self) -> usize {
         (8 << 60) | ((self as *const PageTable as usize) >> 12)
+    }
+
+    /// Allocate a new user page table.
+    pub fn alloc_user_page_table(trapframe: usize) -> Option<Box<Self>> {
+        extern "C" {
+            fn trampoline();
+        }
+        let mut pgt = unsafe { Box::<Self>::try_new_zeroed().ok()?.assume_init() };
+
+        pgt.map_pages(
+            TRAMPOLINE,
+            trampoline as usize,
+            PAGESIZE,
+            PteFlag::READ | PteFlag::EXEC,
+        )
+        .ok()?;
+
+        pgt.map_pages(
+            TRAPFRAME,
+            trapframe,
+            PAGESIZE,
+            PteFlag::READ | PteFlag::WRITE,
+        )
+        .ok()?;
+
+        Some(pgt)
+    }
+
+    /// Load the user initcode into address 0 of pagetable,
+    /// for the very first process.
+    /// sz must be less than a page.
+    pub fn uvm_init(&mut self, code: &[u8]) -> Result<(), &'static str> {
+        if code.len() >= PAGESIZE {
+            return Err("uvm_init: more than a page");
+        }
+
+        let mem = unsafe {
+            SinglePage::alloc_into_raw().or_else(|_| Err("uvm_init: insufficient memory"))?
+        };
+        self.map_pages(
+            0,
+            mem as usize,
+            PAGESIZE,
+            PteFlag::READ | PteFlag::WRITE | PteFlag::EXEC | PteFlag::USER,
+        )?;
+
+        // copy the code
+        unsafe {
+            ptr::copy_nonoverlapping(code.as_ptr(), mem as *mut u8, code.len());
+        }
+
+        Ok(())
     }
 
     pub fn map_pages(
@@ -219,32 +272,32 @@ impl IndexMut<PageTableIndex> for PageTable {
 }
 
 /// A 9-bits index for page table.
-pub struct PageTableIndex(u16);
+struct PageTableIndex(u16);
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct PageTableEntry {
+struct PageTableEntry {
     data: usize, // Physical Page Number (44 bit) + Flags (10 bit)
 }
 
 impl PageTableEntry {
     #[inline]
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self { data: 0 }
     }
 
     #[inline]
-    pub fn is_valid(&self) -> bool {
+    fn is_valid(&self) -> bool {
         (self.data & PteFlag::VALID.bits()) > 0
     }
 
     #[inline]
-    pub fn is_leaf(&self) -> bool {
+    fn is_leaf(&self) -> bool {
         (self.data & (PteFlag::READ | PteFlag::WRITE | PteFlag::EXEC).bits()) > 0
     }
 
     #[inline]
-    pub fn set_addr(&mut self, addr: usize, perm: PteFlag) {
+    fn set_addr(&mut self, addr: usize, perm: PteFlag) {
         self.data = addr | (perm | PteFlag::VALID).bits();
     }
 
