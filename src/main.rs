@@ -10,9 +10,10 @@ use xv6rs::{println, PANICKED};
 
 #[no_mangle]
 fn main() -> ! {
-    xv6rs::bootstrap();
     #[cfg(test)]
     test_main();
+
+    xv6rs::bootstrap();
 
     loop {}
 }

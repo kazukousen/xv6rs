@@ -13,9 +13,11 @@ use core::{
 use crate::param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0};
 
 mod console;
+mod cpu;
 mod param;
 pub mod printf;
 mod register;
+mod spinlock;
 mod start;
 mod uart;
 

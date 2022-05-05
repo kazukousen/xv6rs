@@ -9,6 +9,7 @@ edition = "2021"
 cc = "1.0.25"
 
 [dependencies]
+array-macro = "2.1.1"
 
 [profile.dev]
 panic = "abort"

@@ -1,6 +1,7 @@
 use core::fmt::Write;
 use core::{fmt, sync::atomic::Ordering};
 
+use crate::spinlock::SpinLock;
 use crate::{console, PANICKED};
 
 struct Print;
@@ -16,12 +17,15 @@ impl fmt::Write for Print {
 }
 
 pub fn _print(args: fmt::Arguments<'_>) {
+    static PRINT: SpinLock<()> = SpinLock::new(());
+
     if PANICKED.load(Ordering::Relaxed) {
         Print.write_fmt(args).expect("printf: error");
         return;
     }
-    // TODO: Spinlock critical section
+    let guard = PRINT.lock();
     Print.write_fmt(args).expect("printf: error");
+    drop(guard);
 }
 
 #[macro_export]
