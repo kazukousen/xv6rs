@@ -12,7 +12,7 @@ runner = """
     -bios none \
     -nographic \
     -m 128M \
-    -smp 1 \
+    -smp 3 \
     -kernel
 """
 

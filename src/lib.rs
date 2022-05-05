@@ -3,6 +3,10 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+#![feature(alloc_error_handler)]
+#![feature(const_mut_refs)]
+
+extern crate alloc;
 
 use core::{
     panic::PanicInfo,
@@ -10,10 +14,14 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use crate::param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0};
+use crate::{
+    cpu::CpuTable,
+    param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
+};
 
 mod console;
 mod cpu;
+mod kalloc;
 mod param;
 pub mod printf;
 mod register;
@@ -22,10 +30,19 @@ mod start;
 mod uart;
 
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
+static STARTED: AtomicBool = AtomicBool::new(false);
 
-pub fn bootstrap() {
-    console::init();
-    println!("Hello, xv6 in Rust!");
+pub unsafe fn bootstrap() {
+    let cpu_id = CpuTable::cpu_id();
+    if cpu_id == 0 {
+        console::init();
+        println!("Hello, xv6 in Rust!");
+        kalloc::heap_init(); // physical memory allocator
+        STARTED.store(true, Ordering::SeqCst);
+    } else {
+        while !STARTED.load(Ordering::SeqCst) {}
+        println!("hart {} starting...", cpu_id);
+    }
 }
 
 #[no_mangle]
@@ -75,7 +92,10 @@ where
 #[no_mangle]
 unsafe fn main() -> ! {
     bootstrap();
-    test_main();
+    let cpu_id = CpuTable::cpu_id();
+    if cpu_id == 0 {
+        test_main();
+    }
     loop {}
 }
 

@@ -9,7 +9,7 @@ use core::{panic::PanicInfo, sync::atomic::Ordering};
 use xv6rs::{println, PANICKED};
 
 #[no_mangle]
-fn main() -> ! {
+unsafe fn main() -> ! {
     #[cfg(test)]
     test_main();
 

@@ -31,5 +31,7 @@ SECTIONS
     . = ALIGN(16);
     *(.bss .bss.*)
   }
+
+  PROVIDE(end = .); /* make sure end is after data and bss */
 }
 
