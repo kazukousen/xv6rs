@@ -19,14 +19,17 @@ use core::{
 use cpu::CPU_TABLE;
 
 use crate::{
+    bio::BCACHE,
     cpu::CpuTable,
     param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
     process::PROCESS_TABLE,
     virtio::DISK,
 };
 
+mod bio;
 mod console;
 mod cpu;
+mod fs;
 mod kalloc;
 mod kvm;
 mod page_table;
@@ -39,6 +42,7 @@ mod register;
 mod sleeplock;
 mod spinlock;
 mod start;
+mod superblock;
 mod trap;
 mod uart;
 mod virtio;
@@ -58,6 +62,7 @@ pub unsafe fn bootstrap() -> ! {
         trap::init_hart(); // install kernel trap vector
         plic::init(); // set up interrupt controller
         plic::init_hart(cpu_id); // ask PLIC for device interrupts
+        BCACHE.init(); // buffer cache
         DISK.lock().init(); // emulated hard disk
         PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);

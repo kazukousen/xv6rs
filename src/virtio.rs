@@ -4,12 +4,18 @@
 
 const NUM: usize = 8; // this many virtio descriptors. must be a power of two.
 
-use core::ptr;
+use core::{
+    mem, ptr,
+    sync::atomic::{fence, Ordering},
+};
 
 use array_macro::array;
 
 use crate::{
+    bio::{BufGuard, BSIZE},
+    cpu::CPU_TABLE,
     param::{PAGESIZE, VIRTIO0},
+    process::PROCESS_TABLE,
     spinlock::SpinLock,
 };
 
@@ -126,7 +132,7 @@ pub struct Disk {
     desc: [Desc; NUM],
     avail: Avail,
     pad1: PaddedPage,
-    used: [Used; NUM],
+    used: Used,
     pad2: PaddedPage,
 
     free: [bool; NUM], // is a descriptor free?
@@ -143,7 +149,7 @@ impl Disk {
             pad1: PaddedPage {},
             desc: array![_ => Desc::new(); NUM],
             avail: Avail::new(),
-            used: array![_ => Used::new(); NUM],
+            used: Used::new(),
             pad2: PaddedPage {},
             free: [false; NUM],
             used_idx: 0,
@@ -203,6 +209,195 @@ impl Disk {
 
         // all NUM descriptors start out unused.
         self.free.iter_mut().for_each(|v| *v = true);
+    }
+
+    pub fn intr(&mut self) {
+        unsafe {
+            write(
+                VIRTIO_MMIO_INTERRUPT_ACK,
+                read(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3,
+            )
+        };
+
+        fence(Ordering::SeqCst);
+
+        while self.used_idx != self.used.idx as u32 {
+            fence(Ordering::SeqCst);
+
+            let id = self.used.ring[(self.used_idx % NUM as u32) as usize].id as usize;
+
+            if self.info[id].status != 0 {
+                panic!("virtio_intr: status");
+            }
+
+            // disk is done
+            self.info[id].disk = false;
+
+            let buf = self.info[id]
+                .buf_chan
+                .clone()
+                .expect("virtio: intr not found buffer channel");
+            unsafe {
+                PROCESS_TABLE.wakeup(buf);
+            }
+            self.used_idx += 1;
+        }
+    }
+
+    fn alloc_desc(&mut self) -> Option<usize> {
+        for i in 0..(NUM) {
+            if self.free[i] {
+                self.free[i] = false;
+                return Some(i);
+            }
+        }
+
+        None
+    }
+
+    fn free_desc(&mut self, i: usize) {
+        if i >= (NUM) {
+            panic!("free_desc: out of range: {}", i);
+        }
+        if self.free[i] {
+            panic!("free_desc: already free: {}", i);
+        }
+
+        self.desc[i].addr = 0;
+        self.desc[i].len = 0;
+        self.desc[i].flags = 0;
+        self.desc[i].next = 0;
+        self.free[i] = true;
+
+        unsafe {
+            PROCESS_TABLE.wakeup(&self.free[0] as *const bool as usize);
+        }
+    }
+
+    fn alloc3_desc(&mut self, idx: &mut [usize; 3]) -> bool {
+        for i in 0..3 {
+            match self.alloc_desc() {
+                Some(desc) => {
+                    idx[i] = desc;
+                }
+                None => {
+                    for j in 0..i {
+                        self.free_desc(j);
+                    }
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn free_chain(&mut self, i: usize) {
+        let mut i = i;
+        loop {
+            let should = (self.desc[i].flags & VRING_DESC_F_NEXT) != 0;
+            let next = self.desc[i].next;
+            self.free_desc(i);
+            if !should {
+                break;
+            }
+            i = next as usize;
+        }
+    }
+}
+
+impl SpinLock<Disk> {
+    pub fn read(&self, buf: &mut BufGuard) {
+        self.rw(buf, false);
+    }
+
+    pub fn write(&self, buf: &mut BufGuard) {
+        self.rw(buf, true);
+    }
+
+    /// block operations use three descriptors:
+    /// one for type/reserved/sector
+    /// one for the data
+    /// one for a 1-byte status result
+    fn rw(&self, buf: &mut BufGuard, writing: bool) {
+        let mut guard = self.lock();
+
+        // allocate three descriptors
+        let mut idx = [0usize; 3];
+        loop {
+            if guard.alloc3_desc(&mut idx) {
+                break;
+            }
+            unsafe {
+                guard = CPU_TABLE
+                    .my_proc()
+                    .sleep(&guard.free[0] as *const _ as usize, guard);
+            }
+        }
+
+        // format the three descriptors
+        let buf0 = &mut guard.ops[idx[0]];
+        buf0.typed = if writing {
+            VIRTIO_BLK_T_OUT
+        } else {
+            VIRTIO_BLK_T_IN
+        };
+        buf0.reserved = 0;
+        buf0.sector = (buf.blockno as usize * (BSIZE / 512)) as usize;
+
+        // buf0 (type/reserved/sector)
+        guard.desc[idx[0]].addr = buf0 as *mut _ as usize;
+        guard.desc[idx[0]].len = mem::size_of::<BlkReq>().try_into().unwrap();
+        guard.desc[idx[0]].flags = VRING_DESC_F_NEXT;
+        guard.desc[idx[0]].next = idx[1].try_into().unwrap();
+
+        // data
+        let buf_ptr = buf.data_ptr_mut();
+        guard.desc[idx[1]].addr = buf_ptr as usize;
+        guard.desc[idx[1]].len = BSIZE.try_into().unwrap();
+        guard.desc[idx[1]].flags = if writing { 0 } else { VRING_DESC_F_WRITE };
+        guard.desc[idx[1]].flags |= VRING_DESC_F_NEXT;
+        guard.desc[idx[1]].next = idx[2].try_into().unwrap();
+
+        // status result
+        let status_addr = &mut guard.info[idx[0]].status as *mut _ as usize;
+        guard.info[idx[0]].status = 0xff; // device writes 0 on success
+        guard.desc[idx[2]].addr = status_addr;
+        guard.desc[idx[2]].len = 1;
+        guard.desc[idx[2]].flags = VRING_DESC_F_WRITE;
+        guard.desc[idx[2]].next = 0;
+
+        // record struct buf for intr()
+        guard.info[idx[0]].disk = true;
+        guard.info[idx[0]].buf_chan = Some(buf_ptr as usize);
+
+        // tell the device the first index in our chain of descriptors.
+        let avail_idx = guard.avail.idx as usize % NUM;
+        guard.avail.ring[avail_idx] = idx[0].try_into().unwrap();
+
+        fence(Ordering::SeqCst);
+
+        // tell the device another avail ring entry is available
+        guard.avail.idx += 1;
+
+        fence(Ordering::SeqCst);
+
+        unsafe {
+            write(VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+        }
+
+        // wait for intr() to say request has finised
+        while guard.info[idx[0]].disk {
+            unsafe {
+                guard = CPU_TABLE.my_proc().sleep(buf_ptr as usize, guard);
+            }
+        }
+        // tidy up
+        let res = guard.info[idx[0]].buf_chan.take();
+        assert_eq!(res.unwrap(), buf_ptr as usize);
+        guard.free_chain(idx[0]);
+
+        drop(guard);
     }
 }
 

@@ -45,3 +45,6 @@ pub const CLINT_MAP_SIZE: usize = 0x10000;
 // qemu puts programmable interrupt controller here.
 pub const PLIC: usize = 0x0c00_0000;
 pub const PLIC_MAP_SIZE: usize = 0x40_0000;
+
+pub const ROOTDEV: u32 = 1;
+pub const MAXOPBLOCKS: usize = 10; // max # of blocks any FS op writes

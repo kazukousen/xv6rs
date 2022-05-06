@@ -4,8 +4,9 @@ use alloc::boxed::Box;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
+    fs,
     page_table::{Page, PageTable, SinglePage},
-    param::{KSTACK_SIZE, PAGESIZE},
+    param::{KSTACK_SIZE, PAGESIZE, ROOTDEV},
     println,
     register::satp,
     spinlock::{SpinLock, SpinLockGuard},
@@ -332,6 +333,8 @@ unsafe fn forkret() {
         FIRST = false;
         #[cfg(test)]
         crate::test_main();
+
+        fs::init(ROOTDEV);
     }
 
     user_trap_ret();

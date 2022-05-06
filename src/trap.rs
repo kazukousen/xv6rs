@@ -6,6 +6,7 @@ use crate::{
     plic,
     register::{self, scause::ScauseType},
     spinlock::SpinLock,
+    virtio::DISK,
 };
 
 /// set up to take exceptions and traps while in the kernel.
@@ -82,7 +83,9 @@ unsafe fn handle_trap(is_user: bool) {
 
             match irq as usize {
                 UART0_IRQ => {}
-                VIRTIO0_IRQ => {}
+                VIRTIO0_IRQ => {
+                    DISK.lock().intr();
+                }
                 0 => {}
                 _ => panic!("irq type={}", irq),
             }
