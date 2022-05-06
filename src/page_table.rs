@@ -119,6 +119,75 @@ impl PageTable {
         Ok(())
     }
 
+    /// Unmap process's pages.
+    pub fn unmap_user_page_table(&mut self, sz: usize) {
+        self.unmap_pages(TRAMPOLINE, 1, false)
+            .expect("cannot unmap trampoline");
+        self.unmap_pages(TRAPFRAME, 1, false)
+            .expect("cannot unmap trampframe");
+        if sz > 0 {
+            self.unmap_pages(0, align_up(sz, PAGESIZE) / PAGESIZE, true)
+                .expect("cannot unmap process");
+        }
+    }
+
+    /// Allocate PTEs and physical memory to grow process from oldsz to newsz, which need not to be
+    /// aligned. returns new size or an error.
+    pub fn uvm_alloc(&mut self, oldsz: usize, newsz: usize) -> Result<usize, &'static str> {
+        if newsz <= oldsz {
+            return Ok(oldsz);
+        }
+
+        let oldsz = align_up(oldsz, PAGESIZE);
+        for va in (oldsz..newsz).step_by(PAGESIZE) {
+            let mem = unsafe {
+                match SinglePage::alloc_into_raw() {
+                    Ok(mem) => mem,
+                    Err(_) => {
+                        self.uvm_dealloc(oldsz, newsz)?;
+                        return Err("uvm_alloc: insufficient memory");
+                    }
+                }
+            };
+            match self.map_pages(
+                va,
+                mem as usize,
+                PAGESIZE,
+                PteFlag::READ | PteFlag::WRITE | PteFlag::EXEC | PteFlag::USER,
+            ) {
+                Err(msg) => {
+                    unsafe { SinglePage::free_from_raw(mem) };
+                    self.uvm_dealloc(oldsz, newsz)?;
+                    return Err(msg);
+                }
+                Ok(_) => {
+                    // ok, the mem pointer is leaked, but stored in the page table at virt address `va`.
+                }
+            };
+        }
+
+        Ok(newsz)
+    }
+
+    fn uvm_dealloc(&mut self, mut oldsz: usize, mut newsz: usize) -> Result<usize, &'static str> {
+        if newsz >= oldsz {
+            return Ok(oldsz);
+        }
+
+        oldsz = align_up(oldsz, PAGESIZE);
+        newsz = align_up(newsz, PAGESIZE);
+        if newsz < oldsz {
+            self.unmap_pages(newsz, (oldsz - newsz) / PAGESIZE, true)?;
+        }
+
+        Ok(newsz)
+    }
+
+    pub fn uvm_clear(&mut self, va: usize) {
+        let pte = self.walk_mut(va).expect("uvm_clear");
+        pte.data &= !PteFlag::USER.bits();
+    }
+
     pub fn map_pages(
         &mut self,
         va: usize,
@@ -236,7 +305,7 @@ impl PageTable {
         unsafe { Some(&mut page_table.as_mut().unwrap()[get_index(va, 0)]) }
     }
 
-    fn walk_addr(&self, va: usize) -> Result<usize, &'static str> {
+    pub fn walk_addr(&self, va: usize) -> Result<usize, &'static str> {
         match self.walk(va) {
             Some(pte) => {
                 if !pte.is_valid() {
@@ -303,6 +372,30 @@ impl PageTable {
             count -= n;
             dst = unsafe { dst.offset(n as isize) };
             srcva = va_base + PAGESIZE;
+        }
+        Ok(())
+    }
+
+    /// Copy from kernel to user.
+    /// Copy `count` bytes from `src` to virtual address `dstva` in a given page table.
+    pub fn copy_out(
+        &self,
+        mut dstva: usize,
+        mut src: *const u8,
+        mut count: usize,
+    ) -> Result<(), &'static str> {
+        while count > 0 {
+            let va_base = align_down(dstva, PAGESIZE);
+            let distance = dstva as usize - va_base;
+            let dstpa = unsafe { (self.walk_addr(va_base)? as *mut u8).offset(distance as isize) };
+
+            let n = min(PAGESIZE - distance, count);
+            unsafe {
+                ptr::copy_nonoverlapping(src, dstpa, n);
+            }
+            count -= n;
+            src = unsafe { src.offset(n as isize) };
+            dstva = va_base + PAGESIZE;
         }
         Ok(())
     }
@@ -412,7 +505,7 @@ impl PageTableEntry {
 mod tests {
     use core::mem;
 
-    use crate::param::KERNBASE;
+    use crate::{param::KERNBASE, proc::TrapFrame};
 
     use super::*;
 
@@ -443,6 +536,28 @@ mod tests {
             .expect("unmap_pages");
 
         drop(pgt);
+    }
+
+    #[test_case]
+    fn map_unmap_user_page_table() {
+        let trapframe =
+            unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
+        let mut pgt = PageTable::alloc_user_page_table(trapframe as usize)
+            .expect("cannot alloc user page table");
+        pgt.unmap_user_page_table(0);
+    }
+
+    #[test_case]
+    fn grow_user_page_table() {
+        let trapframe =
+            unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
+        let mut pgt = PageTable::alloc_user_page_table(trapframe as usize)
+            .expect("cannot alloc user page table");
+
+        let sz = 10000;
+        let new_sz = pgt.uvm_alloc(0, sz).expect("uvm_alloc failed");
+        assert_eq!(sz, new_sz);
+        pgt.unmap_user_page_table(sz);
     }
 
     #[test_case]
