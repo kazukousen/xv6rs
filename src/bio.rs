@@ -12,7 +12,7 @@ use crate::{
     virtio::DISK,
 };
 use core::{
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     ptr,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -142,6 +142,21 @@ pub struct BufData([u8; BSIZE]);
 impl BufData {
     const fn new() -> Self {
         Self([0; BSIZE])
+    }
+}
+
+impl Index<usize> for BufData {
+    type Output = u8;
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for BufData {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 

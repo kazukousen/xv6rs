@@ -293,13 +293,13 @@ impl Proc {
     }
 
     pub unsafe fn yield_process(&self) {
-        let mut locked = self.inner.lock();
-        if locked.state == ProcState::Running {
+        let mut guard = self.inner.lock();
+        if guard.state == ProcState::Running {
             let ctx = &(*self.data.get()).context;
-            locked.state = ProcState::Runnable;
-            locked = CPU_TABLE.my_cpu_mut().sched(locked, ctx);
+            guard.state = ProcState::Runnable;
+            guard = CPU_TABLE.my_cpu_mut().sched(guard, ctx);
         }
-        drop(locked);
+        drop(guard);
     }
 
     /// Atomically release lock and sleep on chan.
@@ -331,10 +331,11 @@ unsafe fn forkret() {
     CPU_TABLE.my_proc().inner.unlock();
     if FIRST {
         FIRST = false;
+        fs::init(ROOTDEV);
+
+        // entry point for `cargo test`
         #[cfg(test)]
         crate::test_main();
-
-        fs::init(ROOTDEV);
     }
 
     user_trap_ret();

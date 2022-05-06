@@ -30,7 +30,7 @@ pub struct SuperBlock {
     pub nlog: u32,
     pub logstart: u32,
     inodestart: u32,
-    bmapstart: u32,
+    pub bmapstart: u32,
 }
 
 impl SuperBlock {
@@ -50,13 +50,13 @@ impl SuperBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::param::ROOTDEV;
-
     use super::*;
 
     #[test_case]
     fn read() {
-        unsafe { read_super_block(ROOTDEV) };
         assert_eq!(FSMAGIC, unsafe { SB.magic });
+        assert_eq!(1000, unsafe { SB.size });
+        assert_eq!(32, unsafe { SB.inodestart });
+        assert_eq!(45, unsafe { SB.bmapstart });
     }
 }
