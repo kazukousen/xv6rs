@@ -3,7 +3,7 @@ use core::mem;
 use alloc::boxed::Box;
 use array_macro::array;
 
-use super::ProcData;
+use super::{elf, ProcData};
 
 type SysResult = Result<usize, &'static str>;
 
@@ -38,6 +38,6 @@ impl Syscall for ProcData {
             self.fetch_str(uarg, argv[i].as_deref_mut().unwrap())?;
         }
 
-        Ok(0)
+        elf::load(self, &path, &argv)
     }
 }

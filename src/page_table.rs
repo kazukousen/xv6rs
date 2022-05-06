@@ -569,10 +569,14 @@ mod tests {
         pgt.uvm_init(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
             .expect("uvm_init");
 
-        let src = Box::new(&[6, 7, 8]);
-        pgt.copy_out(5, src.as_ptr(), 3 * mem::size_of::<u8>()).expect("copy_out");
+        let src = &[6, 7, 8];
+        pgt.copy_out(5, src.as_ptr(), 3 * mem::size_of::<u8>())
+            .expect("copy_out");
         let pa = pgt.walk_addr(0).expect("walk_addr");
-        assert_eq!(&[1, 1, 1, 1, 1, 6, 7, 8, 1, 1], unsafe { (pa as *const [u8; 10]).as_ref() }.unwrap());
+        assert_eq!(
+            &[1, 1, 1, 1, 1, 6, 7, 8, 1, 1],
+            unsafe { (pa as *const [u8; 10]).as_ref() }.unwrap()
+        );
 
         pgt.unmap_pages(0, 1, true).expect("unmap_pages");
     }

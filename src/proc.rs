@@ -13,6 +13,7 @@ use crate::{
     trap::{user_trap_ret, usertrap},
 };
 
+mod elf;
 mod syscall;
 
 use self::syscall::Syscall;
@@ -243,8 +244,6 @@ impl ProcData {
                 -1isize as usize
             }
         };
-
-        panic!("syscall: no={}", num);
     }
 
     #[inline]
