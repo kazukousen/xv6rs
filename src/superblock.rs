@@ -29,7 +29,7 @@ pub struct SuperBlock {
     pub ninodes: u32,
     pub nlog: u32,
     pub logstart: u32,
-    inodestart: u32,
+    pub inodestart: u32,
     pub bmapstart: u32,
 }
 

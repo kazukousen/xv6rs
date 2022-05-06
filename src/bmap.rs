@@ -22,7 +22,7 @@ pub const BPB: usize = BSIZE * 8; // Bits-Per-Block
 pub fn alloc(dev: u32) -> u32 {
     let size = unsafe { SB.size } as usize;
     for base in (0..size).step_by(BPB) {
-        let mut buf = BCACHE.bread(dev, unsafe { bmap_block(base as u32) });
+        let mut buf = BCACHE.bread(dev, bmap_block(base as u32));
         let buf_data = unsafe { buf.data_ptr_mut().as_mut().unwrap() };
 
         for offset in 0..BPB {
@@ -79,6 +79,7 @@ fn bzero(dev: u32, blockno: u32) {
     drop(buf);
 }
 
+#[inline]
 fn bmap_block(bn: u32) -> u32 {
     bn / BPB as u32 + unsafe { SB.bmapstart }
 }

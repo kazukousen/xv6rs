@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
-    fs,
+    fs::{self, Inode, INODE_TABLE},
     page_table::{Page, PageTable, SinglePage},
     param::{KSTACK_SIZE, PAGESIZE, ROOTDEV},
     println,
@@ -144,6 +144,7 @@ pub struct ProcData {
     page_table: Option<Box<PageTable>>,
     trapframe: *mut TrapFrame,
     context: Context,
+    pub cwd: Option<Inode>,
 }
 
 impl ProcData {
@@ -154,6 +155,7 @@ impl ProcData {
             page_table: None,
             trapframe: ptr::null_mut(),
             context: Context::new(),
+            cwd: None,
         }
     }
 
@@ -187,6 +189,12 @@ impl ProcData {
         let trapframe = unsafe { self.trapframe.as_mut().unwrap() };
         trapframe.epc = 0; // user program counter
         trapframe.sp = PAGESIZE; // user stack poiner
+
+        self.cwd = Some(
+            INODE_TABLE
+                .namei(&[b'/', 0])
+                .expect("cannot find root inode by b'/'"),
+        );
         Ok(())
     }
 
@@ -322,6 +330,15 @@ impl Proc {
         // Tidy up.
         guard.chan = 0;
         weaked.lock()
+    }
+}
+
+pub fn either_copy_out(is_user: bool, dst: *mut u8, src: *const u8, count: usize) {
+    if is_user {
+        // TODO
+        panic!("either_copy_out: not implemented yet");
+    } else {
+        unsafe { ptr::copy(src, dst, count) };
     }
 }
 
