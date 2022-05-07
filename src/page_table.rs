@@ -188,6 +188,27 @@ impl PageTable {
         pte.data &= !PteFlag::USER.bits();
     }
 
+    /// copy its memory into a child's page table.
+    /// copies both the page table and the phisical memory.
+    pub fn uvm_copy(&mut self, child: &mut PageTable, sz: usize) -> Result<(), ()> {
+        for i in (0..sz).step_by(PAGESIZE) {
+            let pte = self.walk(i).expect("uvm_copy: pte should exist");
+            if !pte.is_valid() {
+                panic!("uvm_copy: page not present");
+            }
+            let pa = pte.as_phys_addr();
+            let flag = pte.get_flag();
+            let mem = unsafe { SinglePage::alloc_into_raw() }.or_else(|_| Err(()))?;
+            unsafe { ptr::copy(pa as *const SinglePage, mem as *mut _, 1) };
+            if child.map_pages(i, mem as usize, PAGESIZE, flag).is_err() {
+                unsafe { SinglePage::free_from_raw(mem) };
+                return Err(());
+            };
+        }
+
+        Ok(())
+    }
+
     pub fn map_pages(
         &mut self,
         va: usize,
@@ -474,6 +495,11 @@ impl PageTableEntry {
     }
 
     #[inline]
+    fn get_flag(&self) -> PteFlag {
+        PteFlag::from_bits_truncate(self.data)
+    }
+
+    #[inline]
     fn set_addr(&mut self, addr: usize, perm: PteFlag) {
         self.data = addr | (perm | PteFlag::VALID).bits();
     }
@@ -613,5 +639,23 @@ mod tests {
         assert_eq!(&[b'i', b'n', b'i', b't'], &dst[0..null_pos]);
 
         pgt.unmap_pages(0, 1, true).expect("unmap_pages");
+    }
+
+    #[test_case]
+    fn uvm_copy() {
+        let parent_tf =
+            unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
+        let mut parent = PageTable::alloc_user_page_table(parent_tf as usize)
+            .expect("cannot alloc user page table");
+        let sz = 10000;
+        parent.uvm_alloc(0, sz).expect("uvm_alloc failed");
+
+        let child_tf =
+            unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
+        let mut child = PageTable::alloc_user_page_table(child_tf as usize)
+            .expect("cannot alloc user page table");
+        parent.uvm_copy(&mut child, sz).expect("uvm_copy");
+        child.unmap_user_page_table(sz);
+        parent.unmap_user_page_table(sz);
     }
 }
