@@ -6,6 +6,7 @@ use crate::{
     plic,
     register::{self, scause::ScauseType},
     spinlock::SpinLock,
+    uart,
     virtio::DISK,
 };
 
@@ -82,7 +83,9 @@ unsafe fn handle_trap(is_user: bool) {
             let irq = plic::claim();
 
             match irq as usize {
-                UART0_IRQ => {}
+                UART0_IRQ => {
+                    uart::intr();
+                }
                 VIRTIO0_IRQ => {
                     DISK.lock().intr();
                 }

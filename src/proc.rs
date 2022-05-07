@@ -284,6 +284,11 @@ impl ProcData {
         )?;
         Ok(dst)
     }
+
+    #[inline]
+    fn copy_in(&self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
+        self.page_table.as_ref().unwrap().copy_in(dst, srcva, count)
+    }
 }
 
 pub struct Proc {
@@ -336,6 +341,18 @@ pub fn either_copy_out(is_user: bool, dst: *mut u8, src: *const u8, count: usize
     if is_user {
         // TODO
         panic!("either_copy_out: not implemented yet");
+    } else {
+        unsafe { ptr::copy(src, dst, count) };
+    }
+}
+
+pub fn either_copy_in(is_user: bool, src: *const u8, dst: *mut u8, count: usize) {
+    if is_user {
+        let p = unsafe { CPU_TABLE.my_proc() };
+        p.data
+            .get_mut()
+            .copy_in(dst, src as usize, count)
+            .expect("either_copy_in");
     } else {
         unsafe { ptr::copy(src, dst, count) };
     }

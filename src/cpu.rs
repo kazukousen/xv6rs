@@ -47,8 +47,6 @@ impl CpuTable {
                 // Save the scheduler context as soon as it is switched to the process's context.
                 swtch(&cpu.scheduler as *const _, p.data.get_mut().get_context());
 
-                // TODO: return called by sched()
-                //
                 // swtch called by `sched()` returns on the scheduler's stack as through
                 // scheduler's switch had returned the scheduler continues its loop, finds a
                 // process to run, switches to it, and the cycle repeats.

@@ -69,7 +69,6 @@ impl ProcessTable {
             .user_init()
             .expect("user_init: failed process's initilization");
 
-        // TODO: p.cwd = fs::namei("/");
         p.inner.lock().state = ProcState::Runnable;
     }
 
