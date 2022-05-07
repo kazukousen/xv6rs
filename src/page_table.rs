@@ -43,7 +43,7 @@ impl Page for SinglePage {}
 
 #[repr(C, align(4096))]
 pub struct QuadPage {
-    data: [u8; PAGESIZE],
+    data: [u8; PAGESIZE * 4],
 }
 
 impl Page for QuadPage {}
