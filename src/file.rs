@@ -72,6 +72,16 @@ impl File {
             }
         }
     }
+
+    pub fn read(&self, addr: *mut u8, n: usize) -> Result<usize, &'static str> {
+        if !self.readable {
+            return Err("read: not readable");
+        }
+
+        match &self.inner {
+            FileInner::Device => console::read(true, addr, n).or_else(|_| Err("read: cannot read")),
+        }
+    }
 }
 
 enum FileInner {

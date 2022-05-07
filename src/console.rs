@@ -1,7 +1,8 @@
 use core::num::Wrapping;
 
 use crate::{
-    proc::either_copy_in,
+    cpu::CPU_TABLE,
+    proc::{either_copy_in, either_copy_out},
     process::PROCESS_TABLE,
     spinlock::SpinLock,
     uart::{self, UART_TX},
@@ -24,6 +25,38 @@ pub fn write(is_user: bool, src: *const u8, n: usize) {
             UART_TX.putc(c);
         }
     }
+}
+
+/// user read()s from the console go here.
+pub fn read(is_user: bool, mut dst: *mut u8, mut n: usize) -> Result<usize, ()> {
+    let target = n;
+    let mut cons = CONSOLE.lock();
+    while n > 0 {
+        // wait until intr handler has put some input into cons.buf
+        while cons.r == cons.w {
+            // TODO: killed
+            cons = unsafe {
+                CPU_TABLE
+                    .my_proc()
+                    .sleep(&cons.r as *const Wrapping<usize> as usize, cons)
+            };
+        }
+
+        cons.r += Wrapping(1);
+        let c = cons.buf[cons.r.0 % INPUT_BUF];
+        // TODO: ctrl-D
+        either_copy_out(is_user, dst, &c, 1);
+        unsafe { dst.offset(1) };
+        n -= 1;
+
+        if c == b'\n' {
+            // a whole line has arrived, return to the user-level read().
+            break;
+        }
+    }
+    drop(cons);
+
+    Ok(target - n)
 }
 
 const INPUT_BUF: usize = 128;
