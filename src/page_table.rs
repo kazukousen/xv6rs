@@ -199,7 +199,7 @@ impl PageTable {
             let pa = pte.as_phys_addr();
             let flag = pte.get_flag();
             let mem = unsafe { SinglePage::alloc_into_raw() }.or_else(|_| Err(()))?;
-            unsafe { ptr::copy(pa as *const SinglePage, mem as *mut _, 1) };
+            unsafe { ptr::copy_nonoverlapping(pa as *const SinglePage, mem as *mut _, 1) };
             if child.map_pages(i, mem as usize, PAGESIZE, flag).is_err() {
                 unsafe { SinglePage::free_from_raw(mem) };
                 return Err(());
@@ -643,19 +643,32 @@ mod tests {
 
     #[test_case]
     fn uvm_copy() {
+        // as user page table
         let parent_tf =
             unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
         let mut parent = PageTable::alloc_user_page_table(parent_tf as usize)
             .expect("cannot alloc user page table");
-        let sz = 10000;
-        parent.uvm_alloc(0, sz).expect("uvm_alloc failed");
+        // contains code
+        let code = [b'a', b'b', b'c', 0];
+        const CODE_SZ: usize = 4;
+        parent.uvm_init(&code).expect("uvm_init");
 
+        // child as user page table
         let child_tf =
             unsafe { SinglePage::alloc_into_raw() }.expect("trapframe") as *mut TrapFrame;
         let mut child = PageTable::alloc_user_page_table(child_tf as usize)
             .expect("cannot alloc user page table");
-        parent.uvm_copy(&mut child, sz).expect("uvm_copy");
-        child.unmap_user_page_table(sz);
-        parent.unmap_user_page_table(sz);
+
+        parent.uvm_copy(&mut child, CODE_SZ).expect("uvm_copy");
+
+        let mut child_code = [0u8; CODE_SZ];
+        child
+            .copy_in(child_code.as_mut_ptr(), 0, CODE_SZ * mem::size_of::<u8>())
+            .expect("copy_in");
+        assert_eq!(&code, &child_code);
+
+        // must clean up before dropping
+        child.unmap_user_page_table(CODE_SZ);
+        parent.unmap_user_page_table(CODE_SZ);
     }
 }

@@ -8,12 +8,14 @@ use crate::{
     page_table::{Page, PteFlag, QuadPage},
     param::{KSTACK_SIZE, PAGESIZE, TRAMPOLINE},
     proc::{Proc, ProcState},
+    spinlock::SpinLock,
 };
 
 pub const NPROC: usize = 64;
 
 pub struct ProcessTable {
     tables: [Proc; NPROC],
+    pid: SpinLock<usize>,
 }
 
 pub static mut PROCESS_TABLE: ProcessTable = ProcessTable::new();
@@ -22,6 +24,7 @@ impl ProcessTable {
     const fn new() -> Self {
         Self {
             tables: array![_ => Proc::new(); NPROC],
+            pid: SpinLock::new(0),
         }
     }
 
@@ -41,18 +44,32 @@ impl ProcessTable {
 
     #[inline]
     fn calc_kstack_va(i: usize) -> usize {
+        // map the kernel stacks beneath the trampoline, each surrounded by invalid guard pages.
         TRAMPOLINE - ((i + 1) * (KSTACK_SIZE + PAGESIZE))
     }
 
-    fn alloc_proc(&mut self) -> Option<&mut Proc> {
+    #[inline]
+    fn alloc_pid(&mut self) -> usize {
+        let ret: usize;
+        let mut pid = self.pid.lock();
+        ret = *pid;
+        *pid += 1;
+        drop(pid);
+        ret
+    }
+
+    pub fn alloc_proc(&mut self) -> Option<&mut Proc> {
+        let pid = self.alloc_pid();
         for p in self.tables.iter_mut() {
             let mut guard = p.inner.lock();
             if guard.state == ProcState::Unused {
                 // found an used process
                 let pdata = p.data.get_mut();
-                pdata.init_trapframe().ok()?;
-                pdata.init_context();
+                pdata.setup().ok()?;
+
+                guard.pid = pid;
                 guard.state = ProcState::Allocated;
+
                 drop(guard);
                 return Some(p);
             }
@@ -81,6 +98,7 @@ impl ProcessTable {
                 drop(guard);
                 return Some(p);
             }
+            drop(guard);
         }
         None
     }

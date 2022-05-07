@@ -144,7 +144,7 @@ impl InodeTable {
         drop(guard);
     }
 
-    fn idup(&self, ip: &Inode) -> Inode {
+    pub fn idup(&self, ip: &Inode) -> Inode {
         let mut guard = self.meta.lock();
         let i = ip.index;
         guard[i].refcnt += 1;

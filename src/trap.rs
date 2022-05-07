@@ -101,11 +101,15 @@ unsafe fn handle_trap(is_user: bool) {
             if !is_user {
                 panic!("kerneltrap: handling syscall");
             }
-            let pdata = CPU_TABLE.my_proc().data.get_mut();
-            pdata.syscall();
+            let p = CPU_TABLE.my_proc();
+            p.syscall();
         }
         ScauseType::Unknown(v) => {
-            panic!("handle_trap: scause {:#x}", v);
+            panic!(
+                "handle_trap: scause {:#x} stval {:#x}",
+                v,
+                register::stval::read()
+            );
         }
     }
 }

@@ -5,13 +5,15 @@ use array_macro::array;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
+    file::File,
     fs::{self, Inode, INODE_TABLE},
     page_table::{Page, PageTable, SinglePage},
-    param::{KSTACK_SIZE, PAGESIZE, ROOTDEV, NOFILE},
+    param::{KSTACK_SIZE, NOFILE, PAGESIZE, ROOTDEV},
     println,
+    process::PROCESS_TABLE,
     register::satp,
     spinlock::{SpinLock, SpinLockGuard},
-    trap::{user_trap_ret, usertrap}, file::File,
+    trap::{user_trap_ret, usertrap},
 };
 
 mod elf;
@@ -120,6 +122,7 @@ pub struct ProcInner {
     pub state: ProcState,
     // sleeping on channel
     pub chan: usize,
+    pub pid: usize,
 }
 
 impl ProcInner {
@@ -127,6 +130,7 @@ impl ProcInner {
         Self {
             state: ProcState::Unused,
             chan: 0,
+            pid: 0,
         }
     }
 }
@@ -167,22 +171,20 @@ impl ProcData {
         self.kstack = v;
     }
 
-    pub fn init_trapframe(&mut self) -> Result<(), ()> {
+    pub fn setup(&mut self) -> Result<(), ()> {
         self.trapframe =
             unsafe { SinglePage::alloc_into_raw() }.or_else(|_| Err(()))? as *mut TrapFrame;
 
         let pgt = PageTable::alloc_user_page_table(self.trapframe as usize).ok_or_else(|| ())?;
         self.page_table = Some(pgt);
 
-        Ok(())
-    }
-
-    pub fn init_context(&mut self) {
         self.context.clear();
         self.context.ra = forkret as usize;
         self.context.sp = self.kstack + KSTACK_SIZE;
+        Ok(())
     }
 
+    /// initialize the user first process
     pub fn user_init(&mut self) -> Result<(), &'static str> {
         // allocate one user page and copy init's instructions
         // and data into it.
@@ -224,104 +226,6 @@ impl ProcData {
         trapframe.kernel_hartid = CpuTable::cpu_id();
 
         self.page_table.as_ref().unwrap().as_satp()
-    }
-
-    pub fn syscall(&mut self) {
-        let trapframe = unsafe { self.trapframe.as_mut() }.unwrap();
-
-        // sepc points to the ecall instruction,
-        // but we want to return to the next instruction.
-        trapframe.epc += 4;
-
-        let num = trapframe.a7;
-        let ret = match num {
-            7 => self.sys_exec(),
-            10 => self.sys_dup(),
-            15 => self.sys_open(),
-            16 => self.sys_write(),
-            _ => {
-                panic!("unknown syscall: {}", num);
-            }
-        };
-        trapframe.a0 = match ret {
-            Ok(ret) => ret,
-            Err(msg) => {
-                println!("syscall error: {}", msg);
-                -1isize as usize
-            }
-        };
-    }
-
-    #[inline]
-    fn arg_str(&self, n: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
-        let addr = self.arg_raw(n)?;
-        self.fetch_str(addr, dst)
-    }
-
-    #[inline]
-    fn fetch_str(&self, addr: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
-        self.page_table.as_ref().unwrap().copy_in_str(dst, addr)
-    }
-
-    #[inline]
-    fn arg_raw(&self, n: usize) -> Result<usize, &'static str> {
-        let tf = unsafe { self.trapframe.as_ref().unwrap() };
-        match n {
-            0 => Ok(tf.a0),
-            1 => Ok(tf.a1),
-            2 => Ok(tf.a2),
-            3 => Ok(tf.a3),
-            4 => Ok(tf.a4),
-            5 => Ok(tf.a5),
-            _ => Err("arg raw"),
-        }
-    }
-
-    #[inline]
-    fn arg_i32(&self, n: usize) -> Result<i32, &'static str> {
-        let addr = self.arg_raw(n)?;
-        Ok(addr as i32)
-    }
-
-    #[inline]
-    fn arg_fd(&self, n: usize) -> Result<(), &'static str> {
-        let fd = self.arg_i32(n)?;
-        if fd < 0 {
-            return Err("file descriptor must be greater than or equal to 0");
-        }
-        if fd >= NOFILE.try_into().unwrap() {
-            return Err("file descriptor must be less than NOFILE");
-        }
-
-        if self.o_files[fd as usize].is_none() {
-            return Err("file descriptor not allocated");
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn alloc_fd(&self) -> Result<usize, ()> {
-        for (i, f) in self.o_files.iter().enumerate() {
-            if f.is_none() {
-                return Ok(i);
-            }
-        }
-        Err(())
-    }
-
-    #[inline]
-    fn fetch_addr(&self, addr: usize) -> Result<usize, &'static str> {
-        if addr >= self.sz || addr + mem::size_of::<usize>() > self.sz {
-            return Err("fetch_addr size");
-        }
-        let mut dst: usize = 0;
-        self.page_table.as_ref().unwrap().copy_in(
-            &mut dst as *mut usize as *mut u8,
-            addr,
-            mem::size_of::<usize>(),
-        )?;
-        Ok(dst)
     }
 
     #[inline]
@@ -373,6 +277,180 @@ impl Proc {
         // Tidy up.
         guard.chan = 0;
         weaked.lock()
+    }
+
+    pub fn fork(&mut self) -> Result<usize, &'static str> {
+        let child =
+            unsafe { PROCESS_TABLE.alloc_proc() }.ok_or_else(|| "cannot allocate new process")?;
+
+        let mut cguard = child.inner.lock();
+
+        // copy user memory from parent to child.
+        let pdata = self.data.get_mut();
+        let cdata = child.data.get_mut();
+        let cpgt = cdata.page_table.as_mut().unwrap();
+        let sz = pdata.sz;
+        if pdata
+            .page_table
+            .as_mut()
+            .unwrap()
+            .uvm_copy(cpgt, sz)
+            .is_err()
+        {
+            Self::free(cdata, &mut cguard);
+            return Err("fork: cannot uvm_copy");
+        };
+        cdata.sz = sz;
+
+        // copy saved user registers.
+        unsafe { ptr::copy_nonoverlapping(pdata.trapframe, cdata.trapframe, 1) };
+
+        // cause fork to return 0 in the child.
+        unsafe { cdata.trapframe.as_mut() }.unwrap().a0 = 0;
+
+        // incremenet reference counts on open file descriptors.
+        for i in 0..pdata.o_files.len() {
+            if let Some(ref f) = pdata.o_files[i] {
+                cdata.o_files[i].replace(f.clone());
+            }
+        }
+        cdata.cwd = Some(INODE_TABLE.idup(&pdata.cwd.as_ref().unwrap()));
+
+        let pid = cguard.pid;
+
+        drop(cguard);
+
+        // TODO: wait
+
+        let mut cguard = child.inner.lock();
+        cguard.state = ProcState::Runnable;
+        drop(cguard);
+
+        Ok(pid)
+    }
+
+    fn free(pdata: &mut ProcData, inner: &mut SpinLockGuard<ProcInner>) {
+        if !pdata.trapframe.is_null() {
+            unsafe { SinglePage::free_from_raw(pdata.trapframe as *mut _) };
+            pdata.trapframe = ptr::null_mut();
+        }
+        if pdata.page_table.is_some() {
+            pdata
+                .page_table
+                .as_mut()
+                .unwrap()
+                .unmap_user_page_table(pdata.sz);
+            pdata.page_table.take();
+        }
+        pdata.sz = 0;
+        inner.chan = 0;
+        inner.pid = 0;
+        inner.state = ProcState::Unused;
+    }
+
+    pub fn syscall(&mut self) {
+        let trapframe = unsafe { self.data.get_mut().trapframe.as_mut() }.unwrap();
+
+        // sepc points to the ecall instruction,
+        // but we want to return to the next instruction.
+        trapframe.epc += 4;
+
+        let num = trapframe.a7;
+        let ret = match num {
+            1 => self.sys_fork(),
+            7 => self.sys_exec(),
+            10 => self.sys_dup(),
+            15 => self.sys_open(),
+            16 => self.sys_write(),
+            _ => {
+                panic!("unknown syscall: {}", num);
+            }
+        };
+        trapframe.a0 = match ret {
+            Ok(ret) => ret,
+            Err(msg) => {
+                println!("syscall error: no={} {}", num, msg);
+                -1isize as usize
+            }
+        };
+    }
+
+    #[inline]
+    fn arg_str(&mut self, n: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
+        let addr = self.arg_raw(n)?;
+        self.fetch_str(addr, dst)
+    }
+
+    #[inline]
+    fn fetch_str(&mut self, addr: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
+        self.data
+            .get_mut()
+            .page_table
+            .as_ref()
+            .unwrap()
+            .copy_in_str(dst, addr)
+    }
+
+    #[inline]
+    fn arg_raw(&mut self, n: usize) -> Result<usize, &'static str> {
+        let tf = unsafe { self.data.get_mut().trapframe.as_ref().unwrap() };
+        match n {
+            0 => Ok(tf.a0),
+            1 => Ok(tf.a1),
+            2 => Ok(tf.a2),
+            3 => Ok(tf.a3),
+            4 => Ok(tf.a4),
+            5 => Ok(tf.a5),
+            _ => Err("arg raw"),
+        }
+    }
+
+    #[inline]
+    fn arg_i32(&mut self, n: usize) -> Result<i32, &'static str> {
+        let addr = self.arg_raw(n)?;
+        Ok(addr as i32)
+    }
+
+    #[inline]
+    fn arg_fd(&mut self, n: usize) -> Result<(), &'static str> {
+        let fd = self.arg_i32(n)?;
+        if fd < 0 {
+            return Err("file descriptor must be greater than or equal to 0");
+        }
+        if fd >= NOFILE.try_into().unwrap() {
+            return Err("file descriptor must be less than NOFILE");
+        }
+
+        if self.data.get_mut().o_files[fd as usize].is_none() {
+            return Err("file descriptor not allocated");
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn alloc_fd(&mut self) -> Result<usize, ()> {
+        for (i, f) in self.data.get_mut().o_files.iter().enumerate() {
+            if f.is_none() {
+                return Ok(i);
+            }
+        }
+        Err(())
+    }
+
+    #[inline]
+    fn fetch_addr(&mut self, addr: usize) -> Result<usize, &'static str> {
+        if addr >= self.data.get_mut().sz || addr + mem::size_of::<usize>() > self.data.get_mut().sz
+        {
+            return Err("fetch_addr size");
+        }
+        let mut dst: usize = 0;
+        self.data.get_mut().page_table.as_ref().unwrap().copy_in(
+            &mut dst as *mut usize as *mut u8,
+            addr,
+            mem::size_of::<usize>(),
+        )?;
+        Ok(dst)
     }
 }
 

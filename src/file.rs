@@ -4,9 +4,9 @@
 use alloc::sync::Arc;
 
 use crate::{
+    console,
     fs::{InodeType, INODE_TABLE},
     log::LOG,
-    console,
 };
 
 pub const O_RDONLY: i32 = 0x000;
@@ -49,9 +49,7 @@ impl File {
             InodeType::Empty => panic!("create: inode empty"),
             InodeType::Directory => panic!(),
             InodeType::File => panic!("create: file type not implemented yet"),
-            InodeType::Device => {
-                FileInner::Device
-            },
+            InodeType::Device => FileInner::Device,
         };
         LOG.end_op();
 

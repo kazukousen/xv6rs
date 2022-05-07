@@ -5,11 +5,12 @@ use array_macro::array;
 
 use crate::file::File;
 
-use super::{elf, ProcData};
+use super::{elf, Proc};
 
 type SysResult = Result<usize, &'static str>;
 
 pub trait Syscall {
+    fn sys_fork(&mut self) -> SysResult; // 1
     fn sys_exec(&mut self) -> SysResult; // 7
     fn sys_dup(&mut self) -> SysResult; // 10
     fn sys_open(&mut self) -> SysResult; // 15
@@ -19,7 +20,11 @@ pub trait Syscall {
 pub const MAXARG: usize = 16;
 pub const MAXARGLEN: usize = 64;
 
-impl Syscall for ProcData {
+impl Syscall for Proc {
+    fn sys_fork(&mut self) -> SysResult {
+        self.fork()
+    }
+
     fn sys_exec(&mut self) -> SysResult {
         let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         self.arg_str(0, &mut path)?;
@@ -43,7 +48,7 @@ impl Syscall for ProcData {
             self.fetch_str(uarg, argv[i].as_deref_mut().unwrap())?;
         }
 
-        elf::load(self, &path, &argv)
+        elf::load(self.data.get_mut(), &path, &argv)
     }
 
     fn sys_dup(&mut self) -> SysResult {
@@ -53,9 +58,9 @@ impl Syscall for ProcData {
             .alloc_fd()
             .or_else(|_| Err("sys_dup: cannot allocate new fd"))?;
 
-        let old_f = self.o_files[0].as_ref().unwrap();
+        let old_f = self.data.get_mut().o_files[0].as_ref().unwrap();
         let new_f = old_f.clone();
-        self.o_files[new_fd].replace(new_f);
+        self.data.get_mut().o_files[new_fd].replace(new_f);
 
         Ok(new_fd)
     }
@@ -70,7 +75,7 @@ impl Syscall for ProcData {
         let fd = self
             .alloc_fd()
             .or_else(|_| Err("sys_open: cannot allocate fd"))?;
-        self.o_files[fd].replace(f);
+        self.data.get_mut().o_files[fd].replace(f);
 
         Ok(fd)
     }
@@ -81,11 +86,9 @@ impl Syscall for ProcData {
         let addr = self.arg_raw(1)?;
         let n = self.arg_i32(2)?;
 
-        match self.o_files[fd as usize].as_ref() {
+        match self.data.get_mut().o_files[fd as usize].as_ref() {
             None => Err("sys_write"),
-            Some(f) => {
-                f.write(addr as *const u8, n as usize)
-            }
+            Some(f) => f.write(addr as *const u8, n as usize),
         }
     }
 }

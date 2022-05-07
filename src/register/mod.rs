@@ -14,5 +14,6 @@ pub mod sepc;
 pub mod sie;
 pub mod sip;
 pub mod sstatus;
+pub mod stval;
 pub mod stvec;
 pub mod tp;
