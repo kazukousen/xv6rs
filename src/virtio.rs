@@ -86,8 +86,6 @@ impl UsedElem {
     }
 }
 
-// TODO
-#[repr(C)]
 struct Info {
     buf_chan: Option<usize>,
     disk: bool,

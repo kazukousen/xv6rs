@@ -47,7 +47,7 @@ use crate::{
     cpu::CPU_TABLE,
     log::LOG,
     param::ROOTDEV,
-    proc::either_copy_out,
+    proc::{either_copy_out, either_copy_in},
     sleeplock::{SleepLock, SleepLockGuard},
     spinlock::SpinLock,
     superblock::{read_super_block, SB},
@@ -112,6 +112,10 @@ impl InodeTable {
         guard[index].refcnt = 1;
         drop(guard);
 
+        let mut idata = self.data[index].lock();
+        idata.valid.take();
+        drop(idata);
+
         Inode { index, dev, inum }
     }
     /// Drop a reference to an in-memory inode.
@@ -126,11 +130,11 @@ impl InodeTable {
             // refcnt == 1 means no other process can have the inode locked,
             // so this sleep-lock won't block/deadlock.
             // that `1` is the reference owned by the thread calling `iput`.
-            let idata = self.data[index].lock();
+            let mut idata = self.data[index].lock();
             if idata.valid.is_some() && idata.dinode.nlink == 0 {
-                // TODO:
                 // inode has no links and no other references
                 // truncate and free
+                // TODO:
             } else {
                 drop(idata);
             }
@@ -351,6 +355,11 @@ impl InodeData {
         }
     }
 
+    #[inline]
+    pub fn get_type(&self) -> InodeType {
+        self.dinode.typ
+    }
+
     /// Returns the disk block number of the offset'th data block in the inode.
     /// If there is no such block yet, bmap() allocates one.
     fn bmap(&mut self, mut offset: usize) -> u32 {
@@ -430,14 +439,11 @@ impl InodeData {
         }
 
         let de_size = mem::size_of::<DirEnt>();
+        let mut de = DirEnt::empty();
+        let de_ptr = &mut de as *mut DirEnt as *mut u8;
         for off in (0..self.dinode.size).step_by(de_size) {
-            let mut de = mem::MaybeUninit::<DirEnt>::uninit();
-            let de_ptr = de.as_mut_ptr() as *mut u8;
-
             self.readi(false, de_ptr, off as usize, de_size)
                 .expect("dirlookup: read");
-
-            let de = unsafe { de.assume_init() };
 
             if de.inum == 0 {
                 continue;
@@ -486,7 +492,7 @@ impl DiskInode {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InodeType {
     Empty = 0,
     Directory = 1,
@@ -498,6 +504,15 @@ pub enum InodeType {
 struct DirEnt {
     inum: u16,
     name: [u8; DIRSIZ],
+}
+
+impl DirEnt {
+    const fn empty() -> Self {
+        Self {
+            inum: 0,
+            name: [0; DIRSIZ],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -551,6 +566,36 @@ mod tests {
     }
 
     #[test_case]
+    fn idup() {
+        let i1 = INODE_TABLE.iget(ROOTDEV, ROOTINO);
+        assert_eq!(0, i1.index);
+        assert_eq!(ROOTDEV, i1.dev);
+        assert_eq!(ROOTINO, i1.inum);
+
+        let imeta = INODE_TABLE.meta.lock().deref() as *const [InodeMeta; NINODE];
+        let imeta = unsafe { imeta.as_ref() }.unwrap();
+        // recycle
+        assert_eq!(2, imeta[0].refcnt); // (ROOTDEV, ROOTINO) is already used as superblock
+        assert_eq!(ROOTDEV, imeta[0].dev);
+        assert_eq!(ROOTINO, imeta[0].inum);
+
+        let i2 = INODE_TABLE.idup(&i1);
+        // recycle
+        assert_eq!(0, i2.index);
+        assert_eq!(ROOTDEV, i2.dev);
+        assert_eq!(ROOTINO, i2.inum);
+
+        assert_eq!(3, imeta[0].refcnt);
+        drop(i1);
+        assert_eq!(2, imeta[0].refcnt);
+        drop(i2);
+        assert_eq!(1, imeta[0].refcnt);
+
+        assert_eq!(ROOTDEV, imeta[0].dev);
+        assert_eq!(ROOTINO, imeta[0].inum);
+    }
+
+    #[test_case]
     fn lookup_root_init_by_dirlookup() {
         let inode = INODE_TABLE.iget(ROOTDEV, ROOTINO);
         let mut idata = inode.ilock();
@@ -568,5 +613,16 @@ mod tests {
             .namei(&[b'/', b'i', b'n', b'i', b't', 0])
             .expect("'/init' not found");
         assert_eq!(7, inode.inum);
+    }
+
+    #[test_case]
+    fn lookup_console() {
+        let inode = INODE_TABLE
+            .namei(&[b'c', b'o', b'n', b's', b'o', b'l', b'e', 0])
+            .expect("'/console' not found");
+        assert_eq!(19, inode.inum);
+        let idata = inode.ilock();
+        assert_eq!(InodeType::Device, idata.get_type());
+        drop(idata);
     }
 }

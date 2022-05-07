@@ -1,16 +1,17 @@
 use core::{cell::UnsafeCell, mem, ptr};
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
+use array_macro::array;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
     fs::{self, Inode, INODE_TABLE},
     page_table::{Page, PageTable, SinglePage},
-    param::{KSTACK_SIZE, PAGESIZE, ROOTDEV},
+    param::{KSTACK_SIZE, PAGESIZE, ROOTDEV, NOFILE},
     println,
     register::satp,
     spinlock::{SpinLock, SpinLockGuard},
-    trap::{user_trap_ret, usertrap},
+    trap::{user_trap_ret, usertrap}, file::File,
 };
 
 mod elf;
@@ -146,6 +147,7 @@ pub struct ProcData {
     trapframe: *mut TrapFrame,
     context: Context,
     pub cwd: Option<Inode>,
+    o_files: [Option<Arc<File>>; NOFILE],
 }
 
 impl ProcData {
@@ -157,6 +159,7 @@ impl ProcData {
             trapframe: ptr::null_mut(),
             context: Context::new(),
             cwd: None,
+            o_files: array![_ => None; NOFILE],
         }
     }
 
@@ -233,6 +236,9 @@ impl ProcData {
         let num = trapframe.a7;
         let ret = match num {
             7 => self.sys_exec(),
+            10 => self.sys_dup(),
+            15 => self.sys_open(),
+            16 => self.sys_write(),
             _ => {
                 panic!("unknown syscall: {}", num);
             }
@@ -269,6 +275,39 @@ impl ProcData {
             5 => Ok(tf.a5),
             _ => Err("arg raw"),
         }
+    }
+
+    #[inline]
+    fn arg_i32(&self, n: usize) -> Result<i32, &'static str> {
+        let addr = self.arg_raw(n)?;
+        Ok(addr as i32)
+    }
+
+    #[inline]
+    fn arg_fd(&self, n: usize) -> Result<(), &'static str> {
+        let fd = self.arg_i32(n)?;
+        if fd < 0 {
+            return Err("file descriptor must be greater than or equal to 0");
+        }
+        if fd >= NOFILE.try_into().unwrap() {
+            return Err("file descriptor must be less than NOFILE");
+        }
+
+        if self.o_files[fd as usize].is_none() {
+            return Err("file descriptor not allocated");
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn alloc_fd(&self) -> Result<usize, ()> {
+        for (i, f) in self.o_files.iter().enumerate() {
+            if f.is_none() {
+                return Ok(i);
+            }
+        }
+        Err(())
     }
 
     #[inline]
