@@ -169,7 +169,11 @@ impl PageTable {
         Ok(newsz)
     }
 
-    fn uvm_dealloc(&mut self, mut oldsz: usize, mut newsz: usize) -> Result<usize, &'static str> {
+    pub fn uvm_dealloc(
+        &mut self,
+        mut oldsz: usize,
+        mut newsz: usize,
+    ) -> Result<usize, &'static str> {
         if newsz >= oldsz {
             return Ok(oldsz);
         }
@@ -241,7 +245,7 @@ impl PageTable {
         Ok(())
     }
 
-    fn unmap_pages(
+    pub fn unmap_pages(
         &mut self,
         va_start: usize,
         n: usize,

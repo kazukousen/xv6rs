@@ -89,8 +89,9 @@ unsafe fn handle_trap(is_user: bool) {
                 VIRTIO0_IRQ => {
                     DISK.lock().intr();
                 }
-                0 => {}
-                _ => panic!("irq type={}", irq),
+                _ => {
+                    // TODO: handle unexpected interrupt
+                }
             }
 
             if irq > 0 {
@@ -153,17 +154,4 @@ pub unsafe fn user_trap_ret() {
     let user_ret_virt: extern "C" fn(usize, usize) -> ! = mem::transmute(user_ret_virt);
 
     user_ret_virt(TRAPFRAME, satp);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // a timer interrupt should occur before the entry point for `cargo test` is reached.
-    #[test_case]
-    fn increment_ticks() {
-        let ticks = TICKS.lock();
-        assert!(*ticks > 0);
-        drop(ticks);
-    }
 }

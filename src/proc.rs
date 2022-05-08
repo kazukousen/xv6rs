@@ -123,6 +123,8 @@ pub struct ProcInner {
     // sleeping on channel
     pub chan: usize,
     pub pid: usize,
+    pub killed: bool,
+    pub exit_status: i32,
 }
 
 impl ProcInner {
@@ -131,6 +133,8 @@ impl ProcInner {
             state: ProcState::Unused,
             chan: 0,
             pid: 0,
+            killed: false,
+            exit_status: 0,
         }
     }
 }
@@ -142,6 +146,7 @@ pub enum ProcState {
     Runnable,
     Running,
     Sleeping,
+    Zombie,
 }
 
 pub struct ProcData {
@@ -151,7 +156,7 @@ pub struct ProcData {
     trapframe: *mut TrapFrame,
     context: Context,
     pub cwd: Option<Inode>,
-    o_files: [Option<Arc<File>>; NOFILE],
+    pub o_files: [Option<Arc<File>>; NOFILE],
 }
 
 impl ProcData {
@@ -171,17 +176,19 @@ impl ProcData {
         self.kstack = v;
     }
 
-    pub fn setup(&mut self) -> Result<(), ()> {
+    pub fn init_page_table(&mut self) -> Result<(), ()> {
         self.trapframe =
             unsafe { SinglePage::alloc_into_raw() }.or_else(|_| Err(()))? as *mut TrapFrame;
 
         let pgt = PageTable::alloc_user_page_table(self.trapframe as usize).ok_or_else(|| ())?;
         self.page_table = Some(pgt);
+        Ok(())
+    }
 
+    pub fn init_context(&mut self) {
         self.context.clear();
         self.context.ra = forkret as usize;
         self.context.sp = self.kstack + KSTACK_SIZE;
-        Ok(())
     }
 
     /// initialize the user first process
@@ -232,16 +239,26 @@ impl ProcData {
     fn copy_in(&self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
         self.page_table.as_ref().unwrap().copy_in(dst, srcva, count)
     }
+
+    #[inline]
+    pub fn copy_out(&self, dstva: usize, src: *const u8, count: usize) -> Result<(), &'static str> {
+        self.page_table
+            .as_ref()
+            .unwrap()
+            .copy_out(dstva, src, count)
+    }
 }
 
 pub struct Proc {
+    pub index: usize,
     pub inner: SpinLock<ProcInner>,
     pub data: UnsafeCell<ProcData>,
 }
 
 impl Proc {
-    pub const fn new() -> Self {
+    pub const fn new(index: usize) -> Self {
         Self {
+            index,
             inner: SpinLock::new(ProcInner::new()),
             data: UnsafeCell::new(ProcData::new()),
         }
@@ -279,6 +296,9 @@ impl Proc {
         weaked.lock()
     }
 
+    /// allocates the new process and gives it exactly the same memory contents as the calling
+    /// process.
+    /// this function returns the new process's pid in the calling process, and returns zero in the child process.
     pub fn fork(&mut self) -> Result<usize, &'static str> {
         let child =
             unsafe { PROCESS_TABLE.alloc_proc() }.ok_or_else(|| "cannot allocate new process")?;
@@ -315,21 +335,22 @@ impl Proc {
             }
         }
         cdata.cwd = Some(INODE_TABLE.idup(&pdata.cwd.as_ref().unwrap()));
-
-        let pid = cguard.pid;
-
         drop(cguard);
 
-        // TODO: wait
+        // set parent
+        let mut parents = unsafe { PROCESS_TABLE.parents.lock() };
+        parents[child.index] = Some(self.index);
+        drop(parents);
 
         let mut cguard = child.inner.lock();
         cguard.state = ProcState::Runnable;
+        let pid = cguard.pid;
         drop(cguard);
 
         Ok(pid)
     }
 
-    fn free(pdata: &mut ProcData, inner: &mut SpinLockGuard<ProcInner>) {
+    pub fn free(pdata: &mut ProcData, inner: &mut SpinLockGuard<ProcInner>) {
         if !pdata.trapframe.is_null() {
             unsafe { SinglePage::free_from_raw(pdata.trapframe as *mut _) };
             pdata.trapframe = ptr::null_mut();
@@ -340,12 +361,14 @@ impl Proc {
                 .as_mut()
                 .unwrap()
                 .unmap_user_page_table(pdata.sz);
-            pdata.page_table.take();
+            drop(pdata.page_table.take());
         }
         pdata.sz = 0;
+        inner.state = ProcState::Unused;
         inner.chan = 0;
         inner.pid = 0;
-        inner.state = ProcState::Unused;
+        inner.killed = false;
+        inner.exit_status = 0;
     }
 
     pub fn syscall(&mut self) {
@@ -358,10 +381,15 @@ impl Proc {
         let num = trapframe.a7;
         let ret = match num {
             1 => self.sys_fork(),
+            2 => self.sys_exit(),
+            3 => self.sys_wait(),
+            5 => self.sys_read(),
             7 => self.sys_exec(),
             10 => self.sys_dup(),
+            12 => self.sys_sbrk(),
             15 => self.sys_open(),
             16 => self.sys_write(),
+            21 => self.sys_close(),
             _ => {
                 panic!("unknown syscall: {}", num);
             }
@@ -412,7 +440,7 @@ impl Proc {
     }
 
     #[inline]
-    fn arg_fd(&mut self, n: usize) -> Result<(), &'static str> {
+    fn arg_fd(&mut self, n: usize) -> Result<i32, &'static str> {
         let fd = self.arg_i32(n)?;
         if fd < 0 {
             return Err("file descriptor must be greater than or equal to 0");
@@ -425,7 +453,7 @@ impl Proc {
             return Err("file descriptor not allocated");
         }
 
-        Ok(())
+        Ok(fd)
     }
 
     #[inline]
@@ -456,8 +484,11 @@ impl Proc {
 
 pub fn either_copy_out(is_user: bool, dst: *mut u8, src: *const u8, count: usize) {
     if is_user {
-        // TODO
-        panic!("either_copy_out: not implemented yet");
+        let p = unsafe { CPU_TABLE.my_proc() };
+        p.data
+            .get_mut()
+            .copy_out(dst as usize, src, count)
+            .expect("either_copy_out");
     } else {
         unsafe { ptr::copy(src, dst, count) };
     }
@@ -477,6 +508,7 @@ pub fn either_copy_in(is_user: bool, src: *const u8, dst: *mut u8, count: usize)
 
 static mut FIRST: bool = true;
 
+/// an allocated process is switched to here by scheduler().
 unsafe fn forkret() {
     CPU_TABLE.my_proc().inner.unlock();
     if FIRST {
@@ -498,3 +530,66 @@ static INITCODE: [u8; 51] = [
     0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_forkret() {
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        assert_eq!(PAGESIZE, pdata.sz);
+        let tf = unsafe { pdata.trapframe.as_ref() }.unwrap();
+        assert_eq!(PAGESIZE, tf.sp);
+    }
+
+    /*
+     * immediately exit with status 42.
+     *
+     * od -t xC exit42code
+     *
+     * ```
+     * #include "syscall.h"
+     * .globl start
+     * start:
+     *   li a0, 42
+     *   li a7, SYS_exit
+     * ecall
+     * ```
+     */
+    static EXIT_42_CODE: [u8; 12] = [
+        0x13, 0x05, 0xa0, 0x02, 0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
+    ];
+
+    #[test_case]
+    fn test_fork_exit_wait_with_return_42_code() {
+        let p = unsafe { CPU_TABLE.my_proc() };
+        let pdata = p.data.get_mut();
+        let pgt = pdata.page_table.as_mut().unwrap();
+
+        // remap
+        pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
+        pgt.uvm_init(&EXIT_42_CODE)
+            .expect("cannot map the test code into the page");
+
+        // the child process would be scheduled on cpu_id=1, then runs the code in user space,
+        // exits with status 42.
+        let child_pid = p.fork().expect("fork failed");
+        assert_eq!(1, child_pid);
+
+        let waited_pid = unsafe { PROCESS_TABLE.wait(p, 1) }.expect("wait failed");
+        assert_eq!(child_pid, waited_pid);
+
+        // check reported exit status
+        let pdata = p.data.get_mut();
+        let pgt = pdata.page_table.as_mut().unwrap();
+        let pa = pgt.walk_addr(0).expect("cannot walk") as *const u8;
+        let reported_status = unsafe { (pa.offset(1) as *const i32).as_ref().unwrap() };
+        assert_eq!(42i32, *reported_status);
+
+        // restore
+        pgt.unmap_pages(0, 1, true).expect("cannot unmap test code");
+        pgt.uvm_init(&INITCODE)
+            .expect("cannot map the initcode into the page");
+    }
+}

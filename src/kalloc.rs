@@ -35,14 +35,4 @@ mod tests {
         assert_eq!(41, *v1);
         assert_eq!(13, *v2);
     }
-
-    #[test_case]
-    fn many_boxes_long_lived() {
-        let long_lived = Box::new(1);
-        for i in 0..1000 {
-            let x = Box::new(i);
-            assert_eq!(i, *x);
-        }
-        assert_eq!(1, *long_lived);
-    }
 }
