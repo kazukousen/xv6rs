@@ -107,7 +107,7 @@ pub fn intr(c: u8) {
                 cons.e += Wrapping(1);
                 let i = cons.e.0 % INPUT_BUF;
                 cons.buf[i] = c;
-                if c == b'\n' || cons.e == cons.r + Wrapping(INPUT_BUF) {
+                if c == b'\n' || c == CTRL_D || cons.e == cons.r + Wrapping(INPUT_BUF) {
                     cons.w = cons.e;
                     unsafe { PROCESS_TABLE.wakeup(&cons.r as *const Wrapping<usize> as usize) };
                 }

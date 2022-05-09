@@ -47,7 +47,7 @@ use crate::{
     cpu::CPU_TABLE,
     log::LOG,
     param::ROOTDEV,
-    proc::{either_copy_out, either_copy_in},
+    proc::{either_copy_in, either_copy_out},
     sleeplock::{SleepLock, SleepLockGuard},
     spinlock::SpinLock,
     superblock::{read_super_block, SB},
@@ -113,11 +113,12 @@ impl InodeTable {
         drop(guard);
 
         let mut idata = self.data[index].lock();
-        idata.valid.take();
+        drop(idata.valid.take());
         drop(idata);
 
         Inode { index, dev, inum }
     }
+
     /// Drop a reference to an in-memory inode.
     /// if that was the last reference, the inode table entry can be recycled.
     /// if that was the last reference and the inode has no links to it,
@@ -134,7 +135,16 @@ impl InodeTable {
             if idata.valid.is_some() && idata.dinode.nlink == 0 {
                 // inode has no links and no other references
                 // truncate and free
-                // TODO:
+
+                drop(guard);
+
+                idata.itrunc();
+                idata.dinode.typ = InodeType::Empty;
+                idata.iupdate();
+                drop(idata.valid.take());
+                drop(idata);
+
+                guard = self.meta.lock();
             } else {
                 drop(idata);
             }
@@ -142,6 +152,84 @@ impl InodeTable {
 
         guard[index].refcnt -= 1;
         drop(guard);
+    }
+
+    /// Allocate an inode on device dev.
+    /// Mark it as allocated by giving it type type.
+    /// Returns an unlocked but allocated and referenced inode.
+    ///
+    /// it panics if the table have no inodes.
+    fn ialloc(&self, dev: u32, typ: InodeType) -> Inode {
+        for inum in 1..unsafe { SB.ninodes } {
+            let mut buf = BCACHE.bread(dev, inode_block(inum));
+            let dinode_ptr =
+                unsafe { (buf.data_ptr_mut() as *mut DiskInode).offset(inode_offset(inum)) };
+            let mut dinode = unsafe { dinode_ptr.as_mut().unwrap() };
+            if dinode.typ == InodeType::Empty {
+                // found a free inode
+                unsafe { ptr::write_bytes(dinode_ptr, 0, 1) };
+                dinode.typ = typ;
+                // mark it allocated on the disk
+                LOG.write(&mut buf);
+                drop(buf);
+                return self.iget(dev, inum);
+            }
+            drop(buf);
+        }
+        panic!("no free inodes")
+    }
+
+    /// if the name does not already exist, `create` now allocates a new inode with `ialloc`.
+    /// if the new inode is a directory, `create` initializes it with `.` and `..` entries.
+    /// finally, now that the data is initialized properly, `create` can link it into the parent
+    /// directory.
+    pub fn create(
+        &self,
+        path: &[u8],
+        typ: InodeType,
+        major: u16,
+        minor: u16,
+    ) -> Result<Inode, &'static str> {
+        // look up the parent dir inode
+        let mut name = [0u8; DIRSIZ];
+        let dir = self
+            .nameiparent(&path, &mut name)
+            .ok_or_else(|| "create: parent dir not found")?;
+        let mut dirdata = dir.ilock();
+
+        let inode = self.ialloc(dir.dev, typ);
+        let mut idata = inode.ilock();
+        idata.dinode.major = major;
+        idata.dinode.minor = minor;
+        idata.dinode.nlink = 1;
+        idata.iupdate();
+
+        if typ == InodeType::Directory {
+            // Create . and .. entries.
+            // No nlink++ for "." because avoid cyclic ref count.
+            dirdata.dinode.nlink += 1; // for ".."
+            dirdata.iupdate();
+
+            let mut name = [0u8; DIRSIZ];
+            name[0] = b'.';
+            idata
+                .dirlink(&name, inode.inum)
+                .or_else(|_| Err("create: create with '.'"))?;
+            name[1] = b'.';
+            idata
+                .dirlink(&name, inode.inum)
+                .or_else(|_| Err("create: create with '..'"))?;
+        }
+        drop(idata);
+
+        // link the new inode into the parent dir.
+        dirdata
+            .dirlink(&name, inode.inum)
+            .or_else(|_| Err("create: dirlink"))?;
+        drop(dirdata);
+        drop(dir);
+
+        Ok(inode)
     }
 
     pub fn idup(&self, ip: &Inode) -> Inode {
@@ -360,6 +448,11 @@ impl InodeData {
         self.dinode.typ
     }
 
+    #[inline]
+    pub fn get_major(&self) -> u16 {
+        self.dinode.major
+    }
+
     /// Returns the disk block number of the offset'th data block in the inode.
     /// If there is no such block yet, bmap() allocates one.
     fn bmap(&mut self, mut offset: usize) -> u32 {
@@ -407,12 +500,17 @@ impl InodeData {
         mut dst: *mut u8,
         mut offset: usize,
         mut n: usize,
-    ) -> Result<(), ()> {
+    ) -> Result<usize, ()> {
         let (dev, _) = self.valid.unwrap();
 
-        if offset.checked_add(n).ok_or_else(|| ())? > self.dinode.size as usize {
-            return Err(());
-        }
+        let size = offset.checked_add(n).ok_or_else(|| ())?;
+
+        let ret = if size > self.dinode.size as usize {
+            self.dinode.size as usize - offset
+        } else {
+            n
+        };
+        n = ret;
 
         // copy the file to dst by separating it into multiparts.
         // [offset:BSIZE], [BSIZE:BSIZE*2], [BSIZE*N:n]
@@ -428,7 +526,46 @@ impl InodeData {
             dst = unsafe { dst.offset(read_n as isize) };
         }
 
+        Ok(ret)
+    }
+
+    /// Write data to inode.
+    fn writei(
+        &mut self,
+        is_user: bool,
+        mut src: *const u8,
+        mut offset: usize,
+        mut n: usize,
+    ) -> Result<(), ()> {
+        let (dev, _) = *self.valid.as_ref().unwrap();
+
+        let end = offset.checked_add(n).ok_or_else(|| ())?;
+        if end > self.dinode.size as usize || end > MAXFILE * BSIZE {
+            return Err(());
+        }
+
+        while n > 0 {
+            let write_n = min(n, BSIZE - offset % BSIZE);
+            let mut buf = BCACHE.bread(dev, self.bmap(offset / BSIZE));
+            let dst_ptr =
+                unsafe { (buf.data_ptr_mut() as *mut u8).offset((offset % BSIZE) as isize) };
+            either_copy_in(is_user, src, dst_ptr, write_n);
+            drop(buf);
+            offset += write_n;
+            n -= write_n;
+            src = unsafe { src.offset(write_n as isize) };
+        }
+
         Ok(())
+    }
+
+    pub fn stati(&self, dst: &mut FileStat) {
+        let (dev, inum) = self.valid.unwrap();
+        dst.dev = dev as i32;
+        dst.inum = inum;
+        dst.typ = self.dinode.typ;
+        dst.nlink = self.dinode.nlink;
+        dst.size = self.dinode.size as u64;
     }
 
     /// Look for a directory entry in a directory.
@@ -461,10 +598,91 @@ impl InodeData {
 
         None
     }
+
+    /// Truncate inode (discard contents).
+    /// Caller must hold sleep-lock.
+    fn itrunc(&mut self) {
+        let (dev, _) = self.valid.unwrap();
+
+        // direct blocks
+        for i in 0..NDIRECT {
+            if self.dinode.addrs[i] > 0 {
+                bmap::free(dev, self.dinode.addrs[i]);
+                self.dinode.addrs[i] = 0;
+            }
+        }
+
+        // an indirect block
+        if self.dinode.addrs[NDIRECT] > 0 {
+            let buf = BCACHE.bread(dev, self.dinode.addrs[NDIRECT]);
+            let bn_ptr = buf.data_ptr() as *const u32;
+            for i in 0..(NINDIRECT as isize) {
+                let bn = unsafe { ptr::read(bn_ptr.offset(i)) };
+                if bn != 0 {
+                    bmap::free(dev, bn);
+                }
+            }
+            drop(buf);
+            bmap::free(dev, self.dinode.addrs[NDIRECT]);
+            self.dinode.addrs[NDIRECT] = 0;
+        }
+
+        self.dinode.size = 0;
+        self.iupdate();
+    }
+
+    /// Copy a modified in-memory inode to disk.
+    /// Must be called after every change to itself dinode field
+    /// that lives on disk.
+    /// Caller must hold sleep-lock.
+    fn iupdate(&mut self) {
+        let (dev, inum) = self.valid.unwrap();
+        let mut bp = BCACHE.bread(dev, inode_block(inum));
+        let dip = unsafe { (bp.data_ptr() as *mut DiskInode).offset(inode_offset(inum)) };
+        unsafe { ptr::write(dip, self.dinode) };
+        LOG.write(&mut bp);
+    }
+
+    /// Write a new directory entry (name, inum) into the directory this.
+    fn dirlink(&mut self, name: &[u8; DIRSIZ], inum: u32) -> Result<(), ()> {
+        if self.dinode.typ != InodeType::Directory {
+            panic!("dirlink: not DIR");
+        }
+
+        // Check that name is not present.
+        if let Some(inode) = self.dirlookup(&name) {
+            drop(inode);
+            return Err(());
+        }
+
+        // Look for an empty DirEnt.
+        let de_size = mem::size_of::<DirEnt>();
+        let mut de = DirEnt::empty();
+        let de_ptr = &mut de as *mut DirEnt as *mut u8;
+        let mut offset = 0;
+        for off in (0..self.dinode.size as usize).step_by(de_size) {
+            self.readi(false, de_ptr, off, de_size)?;
+            if de.inum == 0 {
+                offset = off;
+                break;
+            }
+        }
+
+        for i in 0..DIRSIZ {
+            de.name[i] = name[i];
+            if name[i] == 0 {
+                break;
+            }
+        }
+        de.inum = inum.try_into().unwrap();
+
+        self.writei(false, de_ptr as *const u8, offset, de_size)
+    }
 }
 
 const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE / mem::size_of::<u32>();
+const MAXFILE: usize = NDIRECT + NINDIRECT;
 
 /// On disk inode structure
 #[repr(C)]
@@ -511,6 +729,27 @@ impl DirEnt {
         Self {
             inum: 0,
             name: [0; DIRSIZ],
+        }
+    }
+}
+
+#[repr(C)]
+pub struct FileStat {
+    dev: i32,
+    inum: u32,
+    typ: InodeType,
+    nlink: u16,
+    size: u64,
+}
+
+impl FileStat {
+    pub fn uninit() -> Self {
+        Self {
+            dev: 0,
+            inum: 0,
+            typ: InodeType::Empty,
+            nlink: 0,
+            size: 0,
         }
     }
 }

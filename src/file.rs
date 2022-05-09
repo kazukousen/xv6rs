@@ -1,11 +1,13 @@
 //! A cool aspect of the Unix interface is that most resources in Unix are represented as files,
 //! including devices such as the console, pipes, and of course, real files. The file descriptor
 //! layer is the layer that archives this uniformity.
+use core::cell::UnsafeCell;
+
 use alloc::sync::Arc;
 
 use crate::{
     console,
-    fs::{InodeType, INODE_TABLE},
+    fs::{InodeType, INODE_TABLE, Inode, FileStat},
     log::LOG,
 };
 
@@ -47,9 +49,28 @@ impl File {
         let idata = inode.ilock();
         let inner = match idata.get_type() {
             InodeType::Empty => panic!("create: inode empty"),
-            InodeType::Directory => panic!(),
+            InodeType::Directory => {
+                if o_mode != O_RDONLY {
+                    drop(idata);
+                    drop(inode);
+                    LOG.end_op();
+                    return None;
+                }
+                drop(idata);
+                FileInner::Inode(FileInode {
+                    inode: Some(inode),
+                    offset: UnsafeCell::new(0),
+                })
+            },
             InodeType::File => panic!("create: file type not implemented yet"),
-            InodeType::Device => FileInner::Device,
+            InodeType::Device => {
+                let major = idata.get_major();
+                drop(idata);
+                FileInner::Device(FileDevice {
+                    inode: Some(inode),
+                    major,
+                })
+            }
         };
         LOG.end_op();
 
@@ -66,10 +87,14 @@ impl File {
         }
 
         match &self.inner {
-            FileInner::Device => {
+            FileInner::Device(ref dev) => {
+                if dev.major != 1 {
+                    panic!("device not implemented");
+                }
                 console::write(true, addr, n);
                 Ok(n)
             }
+            _ => panic!("unimplemented yet"),
         }
     }
 
@@ -79,11 +104,50 @@ impl File {
         }
 
         match &self.inner {
-            FileInner::Device => console::read(true, addr, n).or_else(|_| Err("read: cannot read")),
+            FileInner::Device(ref dev) => {
+                if dev.major != 1 {
+                    panic!("device not implemented");
+                }
+                console::read(true, addr, n).or_else(|_| Err("read: cannot read"))
+            }
+            FileInner::Inode(ref f) => {
+                let mut idata = f.inode.as_ref().unwrap().ilock();
+
+                let offset = unsafe { &mut (*f.offset.get()) };
+                let read_n = idata.readi(true, addr, *offset, n).or_else(|()| Err("cannot read the file"))?;
+                *offset += read_n;
+                drop(idata);
+                Ok(read_n)
+            }
+        }
+    }
+
+    /// Get metadata about the file.
+    /// `addr` is a user virtual address, pointing to a struct stat.
+    pub fn stat(&self, st: &mut FileStat) {
+
+        match &self.inner {
+            FileInner::Inode(ref inode) => {
+                let idata = inode.inode.as_ref().unwrap().ilock();
+                idata.stati(st);
+                drop(idata);
+            }
+            FileInner::Device(_dev) => panic!("device not implemented"),
         }
     }
 }
 
 enum FileInner {
-    Device,
+    Inode(FileInode),
+    Device(FileDevice),
+}
+
+struct FileInode {
+    inode: Option<Inode>,
+    offset: UnsafeCell<usize>,
+}
+
+struct FileDevice {
+    inode: Option<Inode>,
+    major: u16,
 }

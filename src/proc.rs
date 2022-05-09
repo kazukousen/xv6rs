@@ -385,6 +385,7 @@ impl Proc {
             3 => self.sys_wait(),
             5 => self.sys_read(),
             7 => self.sys_exec(),
+            8 => self.sys_fstat(),
             10 => self.sys_dup(),
             12 => self.sys_sbrk(),
             15 => self.sys_open(),

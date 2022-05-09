@@ -3,7 +3,7 @@ use core::mem;
 use alloc::boxed::Box;
 use array_macro::array;
 
-use crate::{file::File, process::PROCESS_TABLE};
+use crate::{file::File, process::PROCESS_TABLE, fs::FileStat};
 
 use super::{elf, Proc};
 
@@ -43,7 +43,7 @@ pub trait Syscall {
     /// TODO
     /// int fstat(int fd, struct stat *st)
     /// Place info about an open file into *st.
-    // 8
+    fn sys_fstat(&mut self) -> SysResult; // 8
 
     /// TODO
     /// int chdir(char *dir)
@@ -130,8 +130,7 @@ impl Syscall for Proc {
 
     /// 5
     fn sys_read(&mut self) -> SysResult {
-        let fd = 0;
-        self.arg_fd(fd)?;
+        let fd = self.arg_fd(0)?;
         let addr = self.arg_raw(1)?;
         let n = self.arg_i32(2)?;
 
@@ -166,6 +165,23 @@ impl Syscall for Proc {
         }
 
         elf::load(self.data.get_mut(), &path, &argv)
+    }
+
+    /// 8
+    fn sys_fstat(&mut self) -> SysResult {
+        let fd = self.arg_fd(0)?;
+        let addr = self.arg_raw(1)?;
+
+        let pdata = self.data.get_mut();
+
+        let mut st = FileStat::uninit();
+
+        let f = pdata.o_files[fd as usize].as_ref().ok_or_else(|| "file not found")?;
+        f.stat(&mut st);
+
+        self.data.get_mut().copy_out(addr, &st as *const _ as *const u8, mem::size_of::<FileStat>())?;
+
+        Ok(0)
     }
 
     /// 10
@@ -222,8 +238,7 @@ impl Syscall for Proc {
 
     /// 16
     fn sys_write(&mut self) -> SysResult {
-        let fd = 0;
-        self.arg_fd(fd)?;
+        let fd = self.arg_fd(0)?;
         let addr = self.arg_raw(1)?;
         let n = self.arg_i32(2)?;
 
