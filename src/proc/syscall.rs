@@ -3,7 +3,7 @@ use core::mem;
 use alloc::boxed::Box;
 use array_macro::array;
 
-use crate::{file::File, process::PROCESS_TABLE, fs::FileStat};
+use crate::{file::File, fs::FileStat, process::PROCESS_TABLE};
 
 use super::{elf, Proc};
 
@@ -176,10 +176,16 @@ impl Syscall for Proc {
 
         let mut st = FileStat::uninit();
 
-        let f = pdata.o_files[fd as usize].as_ref().ok_or_else(|| "file not found")?;
+        let f = pdata.o_files[fd as usize]
+            .as_ref()
+            .ok_or_else(|| "file not found")?;
         f.stat(&mut st);
 
-        self.data.get_mut().copy_out(addr, &st as *const _ as *const u8, mem::size_of::<FileStat>())?;
+        self.data.get_mut().copy_out(
+            addr,
+            &st as *const _ as *const u8,
+            mem::size_of::<FileStat>(),
+        )?;
 
         Ok(0)
     }

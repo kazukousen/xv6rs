@@ -7,7 +7,7 @@ use alloc::sync::Arc;
 
 use crate::{
     console,
-    fs::{InodeType, INODE_TABLE, Inode, FileStat},
+    fs::{FileStat, Inode, InodeType, INODE_TABLE},
     log::LOG,
 };
 
@@ -46,7 +46,7 @@ impl File {
         let readable = o_mode & O_WRONLY == 0;
         let writable = (o_mode & O_WRONLY > 0) || (o_mode & O_RDWR > 0);
 
-        let idata = inode.ilock();
+        let mut idata = inode.ilock();
         let inner = match idata.get_type() {
             InodeType::Empty => panic!("create: inode empty"),
             InodeType::Directory => {
@@ -61,8 +61,17 @@ impl File {
                     inode: Some(inode),
                     offset: UnsafeCell::new(0),
                 })
-            },
-            InodeType::File => panic!("create: file type not implemented yet"),
+            }
+            InodeType::File => {
+                if o_mode & O_TRUNC > 0 {
+                    idata.itrunc();
+                }
+                drop(idata);
+                FileInner::Inode(FileInode {
+                    inode: Some(inode),
+                    offset: UnsafeCell::new(0),
+                })
+            }
             InodeType::Device => {
                 let major = idata.get_major();
                 drop(idata);
@@ -87,9 +96,9 @@ impl File {
         }
 
         match &self.inner {
-            FileInner::Device(ref dev) => {
-                if dev.major != 1 {
-                    panic!("device not implemented");
+            FileInner::Device(ref f) => {
+                if f.major != 1 {
+                    panic!("device_write not implemented");
                 }
                 console::write(true, addr, n);
                 Ok(n)
@@ -104,9 +113,9 @@ impl File {
         }
 
         match &self.inner {
-            FileInner::Device(ref dev) => {
-                if dev.major != 1 {
-                    panic!("device not implemented");
+            FileInner::Device(ref f) => {
+                if f.major != 1 {
+                    panic!("device_read not implemented");
                 }
                 console::read(true, addr, n).or_else(|_| Err("read: cannot read"))
             }
@@ -114,7 +123,9 @@ impl File {
                 let mut idata = f.inode.as_ref().unwrap().ilock();
 
                 let offset = unsafe { &mut (*f.offset.get()) };
-                let read_n = idata.readi(true, addr, *offset, n).or_else(|()| Err("cannot read the file"))?;
+                let read_n = idata
+                    .readi(true, addr, *offset, n)
+                    .or_else(|()| Err("cannot read the file"))?;
                 *offset += read_n;
                 drop(idata);
                 Ok(read_n)
@@ -125,14 +136,17 @@ impl File {
     /// Get metadata about the file.
     /// `addr` is a user virtual address, pointing to a struct stat.
     pub fn stat(&self, st: &mut FileStat) {
-
         match &self.inner {
-            FileInner::Inode(ref inode) => {
-                let idata = inode.inode.as_ref().unwrap().ilock();
+            FileInner::Inode(ref f) => {
+                let idata = f.inode.as_ref().unwrap().ilock();
                 idata.stati(st);
                 drop(idata);
             }
-            FileInner::Device(_dev) => panic!("device not implemented"),
+            FileInner::Device(ref f) => {
+                let idata = f.inode.as_ref().unwrap().ilock();
+                idata.stati(st);
+                drop(idata);
+            }
         }
     }
 }

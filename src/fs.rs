@@ -601,7 +601,7 @@ impl InodeData {
 
     /// Truncate inode (discard contents).
     /// Caller must hold sleep-lock.
-    fn itrunc(&mut self) {
+    pub fn itrunc(&mut self) {
         let (dev, _) = self.valid.unwrap();
 
         // direct blocks
