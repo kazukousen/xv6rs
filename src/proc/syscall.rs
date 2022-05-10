@@ -25,7 +25,7 @@ pub trait Syscall {
     /// TODO
     /// int pipe(int p[])
     /// Create a pipe, put read/write file descriptors in p[0] and o[1].
-    // 4
+    fn sys_pipe(&mut self) -> SysResult; // 4
 
     /// int read(int fd, char *buf, int n)
     /// Read n bytes into buf; returns number read; or 0 if end of file.
@@ -128,6 +128,39 @@ impl Syscall for Proc {
         unsafe { PROCESS_TABLE.wait(self, addr) }
     }
 
+    /// 4
+    fn sys_pipe(&mut self) -> SysResult {
+        // array of two integers.
+        let addr = self.arg_raw(0)?;
+
+        let (rf, wf) = File::alloc_pipe();
+
+        let rfd = self
+            .alloc_fd()
+            .or_else(|_| Err("sys_pipe: cannot allocate fd to read the pipe"))?;
+        self.data.get_mut().o_files[rfd].replace(rf);
+
+        let wfd = self
+            .alloc_fd()
+            .or_else(|_| Err("sys_pipe: cannot allocate fd to write the pipe"))?;
+        self.data.get_mut().o_files[wfd].replace(wf);
+
+        let pdata = self.data.get_mut();
+
+        pdata.copy_out(
+            addr,
+            &rfd as *const usize as *const u8,
+            mem::size_of::<usize>(),
+        )?;
+        pdata.copy_out(
+            addr + mem::size_of::<usize>(),
+            &wfd as *const usize as *const u8,
+            mem::size_of::<usize>(),
+        )?;
+
+        Ok(0)
+    }
+
     /// 5
     fn sys_read(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
@@ -136,7 +169,7 @@ impl Syscall for Proc {
 
         match self.data.get_mut().o_files[fd as usize].as_ref() {
             None => Err("sys_read"),
-            Some(f) => f.read(addr as *mut u8, n as usize),
+            Some(f) => f.read(addr, n as usize),
         }
     }
 
@@ -192,13 +225,14 @@ impl Syscall for Proc {
 
     /// 10
     fn sys_dup(&mut self) -> SysResult {
-        let old_fd = 0;
-        self.arg_fd(old_fd)?;
+        let old_fd = self.arg_fd(0)?;
         let new_fd = self
             .alloc_fd()
             .or_else(|_| Err("sys_dup: cannot allocate new fd"))?;
 
-        let old_f = self.data.get_mut().o_files[0].as_ref().unwrap();
+        let old_f = self.data.get_mut().o_files[old_fd as usize]
+            .as_ref()
+            .unwrap();
         let new_f = old_f.clone();
         self.data.get_mut().o_files[new_fd].replace(new_f);
 
@@ -250,7 +284,7 @@ impl Syscall for Proc {
 
         match self.data.get_mut().o_files[fd as usize].as_ref() {
             None => Err("sys_write"),
-            Some(f) => f.write(addr as *const u8, n as usize),
+            Some(f) => f.write(addr, n as usize),
         }
     }
 

@@ -152,7 +152,7 @@ pub enum ProcState {
 pub struct ProcData {
     kstack: usize,
     sz: usize,
-    page_table: Option<Box<PageTable>>,
+    pub page_table: Option<Box<PageTable>>,
     trapframe: *mut TrapFrame,
     context: Context,
     pub cwd: Option<Inode>,
@@ -236,7 +236,7 @@ impl ProcData {
     }
 
     #[inline]
-    fn copy_in(&self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
+    pub fn copy_in(&self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
         self.page_table.as_ref().unwrap().copy_in(dst, srcva, count)
     }
 
@@ -383,6 +383,7 @@ impl Proc {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
             3 => self.sys_wait(),
+            4 => self.sys_pipe(),
             5 => self.sys_read(),
             7 => self.sys_exec(),
             8 => self.sys_fstat(),
@@ -525,7 +526,7 @@ unsafe fn forkret() {
 }
 
 /// first user program that calls exec("/init")
-static INITCODE: [u8; 51] = [
+pub static INITCODE: [u8; 51] = [
     0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02, 0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
     0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48, 0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
     0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

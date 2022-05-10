@@ -7,8 +7,11 @@ use alloc::sync::Arc;
 
 use crate::{
     console,
+    cpu::CPU_TABLE,
     fs::{FileStat, Inode, InodeType, INODE_TABLE},
     log::LOG,
+    process::PROCESS_TABLE,
+    spinlock::SpinLock,
 };
 
 pub const O_RDONLY: i32 = 0x000;
@@ -25,7 +28,7 @@ pub const O_TRUNC: i32 = 0x400;
 pub struct File {
     // A file can be open for reading or writing or both. The `readable` and `writable` fields
     // track this.
-    readable: bool,
+    pub readable: bool,
     writable: bool,
     inner: FileInner,
 }
@@ -90,7 +93,22 @@ impl File {
         }))
     }
 
-    pub fn write(&self, addr: *const u8, n: usize) -> Result<usize, &'static str> {
+    pub fn alloc_pipe() -> (Arc<File>, Arc<File>) {
+        let p = Arc::new(SpinLock::new(FilePipe::new(), "pipe"));
+        let rf = Arc::new(Self {
+            readable: true,
+            writable: false,
+            inner: FileInner::Pipe(p.clone()),
+        });
+        let wf = Arc::new(Self {
+            readable: false,
+            writable: true,
+            inner: FileInner::Pipe(p.clone()),
+        });
+        (rf, wf)
+    }
+
+    pub fn write(&self, addr: usize, n: usize) -> Result<usize, &'static str> {
         if !self.writable {
             return Err("write: not writable");
         }
@@ -100,14 +118,49 @@ impl File {
                 if f.major != 1 {
                     panic!("device_write not implemented");
                 }
-                console::write(true, addr, n);
+                console::write(true, addr as *const u8, n);
                 Ok(n)
+            }
+            FileInner::Pipe(ref f) => {
+                let p = unsafe { CPU_TABLE.my_proc() };
+                let mut guard = f.lock();
+                let mut i = 0;
+                while i < n {
+                    if !guard.read_open {
+                        // TODO killed
+                        drop(guard);
+                        return Err("pipe_write: no read open");
+                    }
+
+                    if guard.n_write == guard.n_read + PIPE_SIZE {
+                        // reached full size
+                        unsafe { PROCESS_TABLE.wakeup(&guard.n_read as *const _ as usize) };
+                        guard = p.sleep(&guard.n_write as *const _ as usize, guard);
+                    } else {
+                        let mut ch = 0u8;
+                        if unsafe {
+                            p.data
+                                .get_mut()
+                                .copy_in(&mut ch as *mut _, addr + i as usize, 1)
+                        }
+                        .is_err()
+                        {
+                            break;
+                        }
+                        let n_write = guard.n_write + 1;
+                        guard.data[n_write % PIPE_SIZE] = ch;
+                        guard.n_write = n_write;
+                        i += 1;
+                    }
+                }
+
+                Ok(i)
             }
             _ => panic!("unimplemented yet"),
         }
     }
 
-    pub fn read(&self, addr: *mut u8, n: usize) -> Result<usize, &'static str> {
+    pub fn read(&self, addr: usize, n: usize) -> Result<usize, &'static str> {
         if !self.readable {
             return Err("read: not readable");
         }
@@ -117,18 +170,47 @@ impl File {
                 if f.major != 1 {
                     panic!("device_read not implemented");
                 }
-                console::read(true, addr, n).or_else(|_| Err("read: cannot read"))
+                console::read(true, addr as *mut u8, n).or_else(|_| Err("read: cannot read"))
             }
             FileInner::Inode(ref f) => {
                 let mut idata = f.inode.as_ref().unwrap().ilock();
 
                 let offset = unsafe { &mut (*f.offset.get()) };
                 let read_n = idata
-                    .readi(true, addr, *offset, n)
+                    .readi(true, addr as *mut u8, *offset, n)
                     .or_else(|()| Err("cannot read the file"))?;
                 *offset += read_n;
                 drop(idata);
                 Ok(read_n)
+            }
+            FileInner::Pipe(ref f) => {
+                let p = unsafe { CPU_TABLE.my_proc() };
+                let mut guard = f.lock();
+                while guard.n_read == guard.n_write && guard.write_open {
+                    // TODO: killed
+                    // pipe is still empty. sleep.
+                    guard = p.sleep(&guard.n_read as *const _ as usize, guard);
+                }
+
+                for i in 0..n as isize {
+                    if guard.n_read == guard.n_write {
+                        break;
+                    }
+                    // copy into addr
+                    guard.n_read += 1;
+                    let ch = &guard.data[guard.n_read % PIPE_SIZE];
+                    if p.data
+                        .get_mut()
+                        .copy_out(addr + i as usize, ch as *const _, 1)
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                // wakeup writer
+                unsafe { PROCESS_TABLE.wakeup(&guard.n_write as *const _ as usize) };
+                drop(guard);
+                Ok(0)
             }
         }
     }
@@ -147,6 +229,43 @@ impl File {
                 idata.stati(st);
                 drop(idata);
             }
+            FileInner::Pipe(ref f) => {
+                let guard = f.lock();
+                drop(guard);
+            }
+        }
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        match self.inner {
+            FileInner::Inode(ref mut f) => {
+                LOG.begin_op();
+                drop(f.inode.take());
+                LOG.end_op();
+            }
+            FileInner::Device(ref mut f) => {
+                LOG.begin_op();
+                drop(f.inode.take());
+                LOG.end_op();
+            }
+            FileInner::Pipe(ref mut f) => {
+                let mut guard = f.lock();
+                if self.writable {
+                    guard.write_open = false;
+                    unsafe { PROCESS_TABLE.wakeup(&guard.n_read as *const _ as usize) };
+                } else {
+                    guard.read_open = false;
+                    unsafe { PROCESS_TABLE.wakeup(&guard.n_write as *const _ as usize) };
+                }
+                if !guard.read_open && !guard.write_open {
+                    drop(guard);
+                    drop(f);
+                } else {
+                    drop(guard);
+                }
+            }
         }
     }
 }
@@ -154,6 +273,7 @@ impl File {
 enum FileInner {
     Inode(FileInode),
     Device(FileDevice),
+    Pipe(Arc<SpinLock<FilePipe>>),
 }
 
 struct FileInode {
@@ -164,4 +284,76 @@ struct FileInode {
 struct FileDevice {
     inode: Option<Inode>,
     major: u16,
+}
+
+const PIPE_SIZE: usize = 512;
+
+struct FilePipe {
+    data: [u8; PIPE_SIZE],
+    read_open: bool,
+    write_open: bool,
+    n_read: usize,
+    n_write: usize,
+}
+
+impl FilePipe {
+    fn new() -> Self {
+        Self {
+            data: [0; PIPE_SIZE],
+            read_open: true,
+            write_open: true,
+            n_read: 0,
+            n_write: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::proc::INITCODE;
+
+    use super::*;
+
+    #[test_case]
+    fn test_pipe() {
+        let (r, w) = File::alloc_pipe();
+        assert_eq!(true, r.readable);
+        assert_eq!(false, r.writable);
+        assert_eq!(false, w.readable);
+        assert_eq!(true, w.writable);
+
+        if let FileInner::Pipe(ref f) = &r.inner {
+            // is sharing the same file pointer with the writer
+            assert_eq!(2, Arc::strong_count(f));
+        } else {
+            panic!("read pipe");
+        }
+
+        if let FileInner::Pipe(ref f) = &w.inner {
+            // is sharing the same file pointer with the reader
+            assert_eq!(2, Arc::strong_count(f));
+        } else {
+            panic!("read pipe");
+        }
+
+        // remap
+        let p = unsafe { CPU_TABLE.my_proc() };
+        let pdata = p.data.get_mut();
+        let pgt = pdata.page_table.as_mut().unwrap();
+        pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
+        pgt.uvm_init(&[0, 0, 0, 0, 0, 1, 2, 3, 4, 5])
+            .expect("cannot map into the page");
+
+        w.write(5, 5).expect("cannot write");
+        r.read(0, 5).expect("cannot read");
+
+        let pa = pgt.walk_addr(0).expect("cannot walk") as *const u8;
+        let actual = unsafe { (pa as *const [u8; 10]).as_ref() }.unwrap();
+        assert_eq!(&[1, 2, 3, 4, 5, 1, 2, 3, 4, 5], actual);
+
+        // restore
+        pgt.unmap_pages(0, 1, true).expect("cannot unmap test code");
+        pgt.uvm_init(&INITCODE)
+            .expect("cannot map the initcode into the page");
+    }
 }
