@@ -149,9 +149,10 @@ impl ProcessTable {
                     }
                 }
                 // free the child proc
-                let cdata = child.data.get_mut();
                 let child_pid = cguard.pid;
+                let cdata = child.data.get_mut();
                 Proc::free(cdata, &mut cguard);
+                parents[child.index].take();
                 drop(cguard);
                 drop(parents);
                 return Ok(child_pid);
