@@ -87,7 +87,7 @@ impl Console {
     }
 }
 
-static CONSOLE: SpinLock<Console> = SpinLock::new(Console::new());
+static CONSOLE: SpinLock<Console> = SpinLock::new(Console::new(), "console");
 
 pub fn intr(c: u8) {
     let mut cons = CONSOLE.lock();

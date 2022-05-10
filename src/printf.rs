@@ -17,7 +17,7 @@ impl fmt::Write for Print {
 }
 
 pub fn _print(args: fmt::Arguments<'_>) {
-    static PRINT: SpinLock<()> = SpinLock::new(());
+    static PRINT: SpinLock<()> = SpinLock::new((), "print");
 
     if PANICKED.load(Ordering::Relaxed) {
         Print.write_fmt(args).expect("printf: error");

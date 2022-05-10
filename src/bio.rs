@@ -29,7 +29,7 @@ pub struct BCache {
 impl BCache {
     const fn new() -> Self {
         Self {
-            lru: SpinLock::new(BufMetaLru::new()),
+            lru: SpinLock::new(BufMetaLru::new(), "bcache_meta"),
             bufs: array![_ => Buf::new(); NBUF],
         }
     }
@@ -131,7 +131,7 @@ impl Buf {
     const fn new() -> Self {
         Self {
             valid: AtomicBool::new(false),
-            data: SleepLock::new(BufData::new()),
+            data: SleepLock::new(BufData::new(), "bcache_data"),
         }
     }
 }

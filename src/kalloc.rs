@@ -7,7 +7,8 @@ use self::linked_list::LinkedListAllocator;
 mod linked_list;
 
 #[global_allocator]
-pub static ALLOCATOR: SpinLock<LinkedListAllocator> = SpinLock::new(LinkedListAllocator::new());
+pub static ALLOCATOR: SpinLock<LinkedListAllocator> =
+    SpinLock::new(LinkedListAllocator::new(), "allocator");
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {

@@ -26,8 +26,8 @@ impl ProcessTable {
     const fn new() -> Self {
         Self {
             tables: array![i => Proc::new(i); NPROC],
-            pid: SpinLock::new(0),
-            parents: SpinLock::new([None; NPROC]),
+            pid: SpinLock::new(0, "pid"),
+            parents: SpinLock::new([None; NPROC], "parents"),
         }
     }
 

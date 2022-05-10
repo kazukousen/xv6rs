@@ -6,26 +6,30 @@
 //! `SpinLock<T>.lock()` can wait for a thread to release a spinlock; just not on the same CPU.
 
 use core::{
-    cell::UnsafeCell,
+    cell::{Cell, UnsafeCell},
     ops::Deref,
     ops::DerefMut,
     sync::atomic::{fence, AtomicBool, Ordering},
 };
 
-use crate::cpu;
+use crate::cpu::{self, CpuTable};
 
 pub struct SpinLock<T: ?Sized> {
     lock: AtomicBool,
+    name: &'static str, // for debugging
+    cpu_id: Cell<isize>,
     data: UnsafeCell<T>,
 }
 
 unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
-    pub const fn new(data: T) -> Self {
+    pub const fn new(data: T, name: &'static str) -> Self {
         Self {
             lock: AtomicBool::new(false),
+            name,
             data: UnsafeCell::new(data),
+            cpu_id: Cell::new(-1),
         }
     }
 }
@@ -42,6 +46,9 @@ impl<T: ?Sized> SpinLock<T> {
     fn acquire(&self) {
         // disable interrupts to avoid deadlock.
         cpu::push_off();
+        if self.holding() {
+            panic!("acquire {} in cpu={}", self.name, self.cpu_id.get());
+        }
 
         while self
             .lock
@@ -49,9 +56,20 @@ impl<T: ?Sized> SpinLock<T> {
             .is_err()
         {}
         fence(Ordering::SeqCst);
+
+        // record info about lock acquisition for holding()
+        self.cpu_id.set(CpuTable::cpu_id() as isize);
+    }
+
+    fn holding(&self) -> bool {
+        self.lock.load(Ordering::Relaxed) && self.cpu_id.get() == CpuTable::cpu_id() as isize
     }
 
     fn release(&self) {
+        if !self.holding() {
+            panic!("release {}", self.name);
+        }
+        self.cpu_id.set(-1);
         fence(Ordering::SeqCst);
         self.lock.store(false, Ordering::Release);
 

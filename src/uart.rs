@@ -61,11 +61,14 @@ pub struct UartTx {
     buf: [u8; UART_TX_BUF_SIZE],
 }
 
-pub static mut UART_TX: SpinLock<UartTx> = SpinLock::new(UartTx {
-    w: 0,
-    r: 0,
-    buf: [0; UART_TX_BUF_SIZE],
-});
+pub static mut UART_TX: SpinLock<UartTx> = SpinLock::new(
+    UartTx {
+        w: 0,
+        r: 0,
+        buf: [0; UART_TX_BUF_SIZE],
+    },
+    "uart",
+);
 
 impl UartTx {
     fn start(&mut self) {

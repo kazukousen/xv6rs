@@ -139,7 +139,7 @@ pub struct Disk {
     ops: [BlkReq; NUM],
 }
 
-pub static DISK: SpinLock<Disk> = SpinLock::new(Disk::new());
+pub static DISK: SpinLock<Disk> = SpinLock::new(Disk::new(), "disk");
 
 impl Disk {
     const fn new() -> Self {

@@ -33,9 +33,9 @@ pub struct SleepLock<T> {
 unsafe impl<T> Sync for SleepLock<T> {}
 
 impl<T> SleepLock<T> {
-    pub const fn new(data: T) -> Self {
+    pub const fn new(data: T, name: &'static str) -> Self {
         Self {
-            inner_lock: SpinLock::new(()),
+            inner_lock: SpinLock::new((), name),
             locked: Cell::new(false),
             data: UnsafeCell::new(data),
         }

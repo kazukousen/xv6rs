@@ -79,8 +79,8 @@ pub struct InodeTable {
 impl InodeTable {
     pub const fn new() -> Self {
         Self {
-            meta: SpinLock::new(array![_ => InodeMeta::new(); NINODE]),
-            data: array![_ => SleepLock::new(InodeData::new()); NINODE],
+            meta: SpinLock::new(array![_ => InodeMeta::new(); NINODE], "inode_meta"),
+            data: array![_ => SleepLock::new(InodeData::new(), "inode_data"); NINODE],
         }
     }
 

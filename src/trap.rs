@@ -115,7 +115,7 @@ unsafe fn handle_trap(is_user: bool) {
     }
 }
 
-static TICKS: SpinLock<usize> = SpinLock::new(0);
+static TICKS: SpinLock<usize> = SpinLock::new(0, "ticks");
 
 fn clock_intr() {
     let mut guard = TICKS.lock();

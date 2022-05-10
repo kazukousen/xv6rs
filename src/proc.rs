@@ -259,7 +259,7 @@ impl Proc {
     pub const fn new(index: usize) -> Self {
         Self {
             index,
-            inner: SpinLock::new(ProcInner::new()),
+            inner: SpinLock::new(ProcInner::new(), "proc"),
             data: UnsafeCell::new(ProcData::new()),
         }
     }

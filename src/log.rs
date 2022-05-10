@@ -35,7 +35,7 @@ pub struct Log {
     header: LogHeader,
 }
 
-pub static LOG: SpinLock<Log> = SpinLock::new(Log::new());
+pub static LOG: SpinLock<Log> = SpinLock::new(Log::new(), "log");
 
 impl SpinLock<Log> {
     pub unsafe fn init(&self, dev: u32, sb: &SuperBlock) {
