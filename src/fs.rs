@@ -539,8 +539,9 @@ impl InodeData {
     ) -> Result<(), ()> {
         let (dev, _) = *self.valid.as_ref().unwrap();
 
-        let end = offset.checked_add(n).ok_or_else(|| ())?;
-        if end > self.dinode.size as usize || end > MAXFILE * BSIZE {
+        if offset > self.dinode.size as usize
+            || offset.checked_add(n).ok_or_else(|| ())? > MAXFILE * BSIZE
+        {
             return Err(());
         }
 
@@ -550,11 +551,18 @@ impl InodeData {
             let dst_ptr =
                 unsafe { (buf.data_ptr_mut() as *mut u8).offset((offset % BSIZE) as isize) };
             either_copy_in(is_user, src, dst_ptr, write_n);
+            LOG.write(&mut buf);
             drop(buf);
             offset += write_n;
             n -= write_n;
             src = unsafe { src.offset(write_n as isize) };
         }
+
+        if offset > self.dinode.size as usize {
+            self.dinode.size = offset.try_into().unwrap();
+        }
+
+        self.iupdate();
 
         Ok(())
     }
@@ -644,7 +652,7 @@ impl InodeData {
     }
 
     /// Write a new directory entry (name, inum) into the directory this.
-    fn dirlink(&mut self, name: &[u8; DIRSIZ], inum: u32) -> Result<(), ()> {
+    fn dirlink(&mut self, name: &[u8; DIRSIZ], inum: u32) -> Result<(), &'static str> {
         if self.dinode.typ != InodeType::Directory {
             panic!("dirlink: not DIR");
         }
@@ -652,21 +660,12 @@ impl InodeData {
         // Check that name is not present.
         if let Some(inode) = self.dirlookup(&name) {
             drop(inode);
-            return Err(());
+            return Err("dirent already present");
         }
 
         // Look for an empty DirEnt.
-        let de_size = mem::size_of::<DirEnt>();
         let mut de = DirEnt::empty();
-        let de_ptr = &mut de as *mut DirEnt as *mut u8;
-        let mut offset = 0;
-        for off in (0..self.dinode.size as usize).step_by(de_size) {
-            self.readi(false, de_ptr, off, de_size)?;
-            if de.inum == 0 {
-                offset = off;
-                break;
-            }
-        }
+        let offset = self.find_free_dirent(&mut de)?;
 
         for i in 0..DIRSIZ {
             de.name[i] = name[i];
@@ -676,7 +675,30 @@ impl InodeData {
         }
         de.inum = inum.try_into().unwrap();
 
-        self.writei(false, de_ptr as *const u8, offset, de_size)
+        // write updated the dirent
+        self.writei(
+            false,
+            &de as *const _ as *const u8,
+            offset,
+            mem::size_of::<DirEnt>(),
+        )
+        .or_else(|_| Err("failed to write dirent"))
+    }
+
+    fn find_free_dirent(&mut self, de: &mut DirEnt) -> Result<usize, &'static str> {
+        let de_size = mem::size_of::<DirEnt>();
+        let de_ptr = de as *mut _ as *mut u8;
+        let mut offset = 0;
+
+        for off in (0..self.dinode.size as usize).step_by(de_size) {
+            self.readi(false, de_ptr, off, de_size)
+                .or_else(|_| Err("failed to read entry in directory inode"))?;
+            if de.inum == 0 {
+                offset = off;
+            }
+        }
+
+        Ok(offset)
     }
 }
 
@@ -862,6 +884,30 @@ mod tests {
         assert_eq!(19, inode.inum);
         let idata = inode.ilock();
         assert_eq!(InodeType::Device, idata.get_type());
+        drop(idata);
+    }
+
+    #[test_case]
+    fn lookup_parent() {
+        let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+        let inode = INODE_TABLE
+            .nameiparent(&[b'i', b'n', b'i', b't', 0], &mut name)
+            .expect("the parent not found");
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        let cwd = pdata.cwd.as_ref().unwrap();
+        assert_eq!(cwd.dev, inode.dev);
+        assert_eq!(cwd.inum, inode.inum);
+        drop(inode);
+    }
+
+    #[test_case]
+    fn test_find_free_dirent() {
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        let cwd = pdata.cwd.as_ref().unwrap();
+        let mut idata = cwd.ilock();
+        let mut de = DirEnt::empty();
+        let offset = idata.find_free_dirent(&mut de).expect("dirent");
+        assert_eq!(1008, offset);
         drop(idata);
     }
 }

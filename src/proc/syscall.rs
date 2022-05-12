@@ -3,7 +3,12 @@ use core::mem;
 use alloc::boxed::Box;
 use array_macro::array;
 
-use crate::{file::File, fs::{FileStat, INODE_TABLE, InodeType}, process::PROCESS_TABLE, log::LOG};
+use crate::{
+    file::File,
+    fs::{FileStat, InodeType, INODE_TABLE},
+    log::LOG,
+    process::PROCESS_TABLE,
+};
 
 use super::{elf, Proc};
 
@@ -327,10 +332,12 @@ impl Syscall for Proc {
         })?;
         let path = &path[0..=null_pos];
 
-        let inode = INODE_TABLE.create(&path, InodeType::Directory, 0, 0).or_else(|msg| {
-            LOG.end_op();
-            Err(msg)
-        })?;
+        let inode = INODE_TABLE
+            .create(&path, InodeType::Directory, 0, 0)
+            .or_else(|msg| {
+                LOG.end_op();
+                Err(msg)
+            })?;
         drop(inode);
         LOG.end_op();
         Ok(0)
