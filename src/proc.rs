@@ -387,10 +387,12 @@ impl Proc {
             5 => self.sys_read(),
             7 => self.sys_exec(),
             8 => self.sys_fstat(),
+            9 => self.sys_chdir(),
             10 => self.sys_dup(),
             12 => self.sys_sbrk(),
             15 => self.sys_open(),
             16 => self.sys_write(),
+            20 => self.sys_mkdir(),
             21 => self.sys_close(),
             _ => {
                 panic!("unknown syscall: {}", num);

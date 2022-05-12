@@ -37,7 +37,7 @@ impl File {
     pub fn open(path: &[u8], o_mode: i32) -> Option<Arc<Self>> {
         LOG.begin_op();
         let inode = if o_mode & O_CREATE > 0 {
-            panic!("create file not implemented yet");
+            INODE_TABLE.create(&path, InodeType::File, 0, 0).ok()
         } else {
             INODE_TABLE.namei(&path)
         }
@@ -138,12 +138,10 @@ impl File {
                         guard = p.sleep(&guard.n_write as *const _ as usize, guard);
                     } else {
                         let mut ch = 0u8;
-                        if unsafe {
-                            p.data
-                                .get_mut()
-                                .copy_in(&mut ch as *mut _, addr + i as usize, 1)
-                        }
-                        .is_err()
+                        if p.data
+                            .get_mut()
+                            .copy_in(&mut ch as *mut _, addr + i as usize, 1)
+                            .is_err()
                         {
                             break;
                         }
@@ -154,6 +152,8 @@ impl File {
                     }
                 }
 
+                unsafe { PROCESS_TABLE.wakeup(&guard.n_read as *const _ as usize) };
+                drop(guard);
                 Ok(i)
             }
             _ => panic!("unimplemented yet"),
@@ -315,7 +315,7 @@ mod tests {
     use super::*;
 
     #[test_case]
-    fn test_pipe() {
+    fn share_pipe() {
         let (r, w) = File::alloc_pipe();
         assert_eq!(true, r.readable);
         assert_eq!(false, r.writable);
@@ -335,7 +335,10 @@ mod tests {
         } else {
             panic!("read pipe");
         }
+    }
 
+    #[test_case]
+    fn write_read() {
         // remap
         let p = unsafe { CPU_TABLE.my_proc() };
         let pdata = p.data.get_mut();
@@ -343,6 +346,8 @@ mod tests {
         pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
         pgt.uvm_init(&[0, 0, 0, 0, 0, 1, 2, 3, 4, 5])
             .expect("cannot map into the page");
+
+        let (r, w) = File::alloc_pipe();
 
         w.write(5, 5).expect("cannot write");
         r.read(0, 5).expect("cannot read");

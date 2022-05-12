@@ -3,7 +3,7 @@ use core::mem;
 use alloc::boxed::Box;
 use array_macro::array;
 
-use crate::{file::File, fs::FileStat, process::PROCESS_TABLE};
+use crate::{file::File, fs::{FileStat, INODE_TABLE, InodeType}, process::PROCESS_TABLE, log::LOG};
 
 use super::{elf, Proc};
 
@@ -22,7 +22,6 @@ pub trait Syscall {
     /// Wait for a child to exit; exit status in *status; returns child PID.
     fn sys_wait(&mut self) -> SysResult; // 3
 
-    /// TODO
     /// int pipe(int p[])
     /// Create a pipe, put read/write file descriptors in p[0] and o[1].
     fn sys_pipe(&mut self) -> SysResult; // 4
@@ -48,7 +47,7 @@ pub trait Syscall {
     /// TODO
     /// int chdir(char *dir)
     /// Change the current directory.
-    // 9
+    fn sys_chdir(&mut self) -> SysResult; // 9
 
     /// int dup(int fd)
     /// Return a new file descriptor referring to the same file as fd.
@@ -99,7 +98,7 @@ pub trait Syscall {
     /// TODO
     /// int mkdir(char *dir)
     /// Create a new directory.
-    // 20
+    fn sys_mkdir(&mut self) -> SysResult; // 20
 
     /// int close(int fd)
     /// Release open file fd.
@@ -223,6 +222,36 @@ impl Syscall for Proc {
         Ok(0)
     }
 
+    /// 9
+    fn sys_chdir(&mut self) -> SysResult {
+        LOG.begin_op();
+        let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let null_pos = self.arg_str(0, &mut path).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?;
+        let path = &path[0..=null_pos];
+        let inode = INODE_TABLE.namei(&path).ok_or_else(|| {
+            LOG.end_op();
+            "cannot find path"
+        })?;
+
+        let idata = inode.ilock();
+        if idata.get_type() != InodeType::Directory {
+            drop(idata);
+            drop(inode);
+            LOG.end_op();
+            return Err("target path is not directory");
+        }
+
+        drop(idata);
+        let old = self.data.get_mut().cwd.replace(inode).unwrap();
+        drop(old);
+        LOG.end_op();
+
+        Ok(0)
+    }
+
     /// 10
     fn sys_dup(&mut self) -> SysResult {
         let old_fd = self.arg_fd(0)?;
@@ -264,8 +293,8 @@ impl Syscall for Proc {
     fn sys_open(&mut self) -> SysResult {
         let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let null_pos = self.arg_str(0, &mut path)?;
-        let o_mode = self.arg_i32(1)?;
         let path = &path[0..=null_pos];
+        let o_mode = self.arg_i32(1)?;
 
         let f = File::open(&path, o_mode).ok_or_else(|| "sys_open: cannot open file")?;
         let fd = self
@@ -286,6 +315,25 @@ impl Syscall for Proc {
             None => Err("sys_write"),
             Some(f) => f.write(addr, n as usize),
         }
+    }
+
+    /// 20
+    fn sys_mkdir(&mut self) -> SysResult {
+        LOG.begin_op();
+        let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let null_pos = self.arg_str(0, &mut path).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?;
+        let path = &path[0..=null_pos];
+
+        let inode = INODE_TABLE.create(&path, InodeType::Directory, 0, 0).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?;
+        drop(inode);
+        LOG.end_op();
+        Ok(0)
     }
 
     /// 21
