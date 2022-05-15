@@ -183,18 +183,12 @@ impl InodeTable {
     /// if the new inode is a directory, `create` initializes it with `.` and `..` entries.
     /// finally, now that the data is initialized properly, `create` can link it into the parent
     /// directory.
-    pub fn create(
-        &self,
-        path: &[u8],
-        typ: InodeType,
-        major: u16,
-        minor: u16,
-    ) -> Result<Inode, &'static str> {
+    pub fn create(&self, path: &[u8], typ: InodeType, major: u16, minor: u16) -> Inode {
         // look up the parent dir inode
         let mut name = [0u8; DIRSIZ];
         let dir = self
             .nameiparent(&path, &mut name)
-            .ok_or_else(|| "create: parent dir not found")?;
+            .expect("create: parent not found");
         let mut dirdata = dir.ilock();
 
         let inode = self.ialloc(dir.dev, typ);
@@ -214,22 +208,79 @@ impl InodeTable {
             name[0] = b'.';
             idata
                 .dirlink(&name, inode.inum)
-                .or_else(|_| Err("create: create with '.'"))?;
+                .expect("create: create with '.'");
             name[1] = b'.';
             idata
                 .dirlink(&name, inode.inum)
-                .or_else(|_| Err("create: create with '..'"))?;
+                .expect("create: create with '..'");
         }
         drop(idata);
 
         // link the new inode into the parent dir.
-        dirdata
-            .dirlink(&name, inode.inum)
-            .or_else(|_| Err("create: dirlink"))?;
+        dirdata.dirlink(&name, inode.inum).expect("create: dirlink");
         drop(dirdata);
         drop(dir);
 
-        Ok(inode)
+        inode
+    }
+
+    /// must be called inside a transaction (begin_op/end_op).
+    pub fn unlink(&self, path: &[u8]) -> Result<(), &'static str> {
+        let mut name = [0u8; DIRSIZ];
+        let dir = self
+            .nameiparent(&path, &mut name)
+            .ok_or_else(|| "cannot find the parent")?;
+
+        // Cannot unlink '.' or '..'
+        let mut dot = [0u8; DIRSIZ];
+        dot[0] = b'.';
+        if &name == &dot {
+            return Err("cannot unlink '.'");
+        }
+        dot[1] = b'.';
+        if &name == &dot {
+            return Err("cannot unlink '..'");
+        }
+
+        let mut dirdata = dir.ilock();
+        let (inode, offset) = dirdata
+            .dirlookup(&name)
+            .ok_or_else(|| "cannot find the file in the parent")?;
+        let mut idata = inode.ilock();
+
+        if idata.dinode.nlink < 1 {
+            panic!("unlink: nlink < 1");
+        }
+        if idata.dinode.typ == InodeType::Directory && !idata.is_dir_empty() {
+            drop(idata);
+            drop(inode);
+            return Err("the directory not empty");
+        }
+
+        // update dirent empty
+        let de = DirEnt::empty();
+        dirdata
+            .writei(
+                false,
+                &de as *const _ as *const u8,
+                offset,
+                mem::size_of::<DirEnt>(),
+            )
+            .expect("unlink: writei failed");
+
+        if idata.dinode.typ == InodeType::Directory {
+            dirdata.dinode.nlink -= 1;
+            dirdata.iupdate();
+        }
+        drop(dirdata);
+        drop(dir);
+
+        idata.dinode.nlink -= 1;
+        idata.iupdate();
+        drop(idata);
+        drop(inode);
+
+        Ok(())
     }
 
     pub fn idup(&self, ip: &Inode) -> Inode {
@@ -300,7 +351,7 @@ impl InodeTable {
             }
 
             match idata.dirlookup(name) {
-                Some(next) => {
+                Some((next, _)) => {
                     drop(idata);
                     inode = next;
                 }
@@ -577,7 +628,7 @@ impl InodeData {
     }
 
     /// Look for a directory entry in a directory.
-    fn dirlookup(&mut self, name: &[u8; DIRSIZ]) -> Option<Inode> {
+    fn dirlookup(&mut self, name: &[u8; DIRSIZ]) -> Option<(Inode, usize)> {
         let (dev, _) = self.valid.unwrap();
         if self.dinode.typ != InodeType::Directory {
             panic!("dirlookup not DIR");
@@ -586,8 +637,8 @@ impl InodeData {
         let de_size = mem::size_of::<DirEnt>();
         let mut de = DirEnt::empty();
         let de_ptr = &mut de as *mut DirEnt as *mut u8;
-        for off in (0..self.dinode.size).step_by(de_size) {
-            self.readi(false, de_ptr, off as usize, de_size)
+        for off in (0..self.dinode.size as usize).step_by(de_size) {
+            self.readi(false, de_ptr, off, de_size)
                 .expect("dirlookup: read");
 
             if de.inum == 0 {
@@ -599,7 +650,7 @@ impl InodeData {
                     break;
                 }
                 if de.name[i] == 0 {
-                    return Some(INODE_TABLE.iget(dev, de.inum as u32));
+                    return Some((INODE_TABLE.iget(dev, de.inum as u32), off));
                 }
             }
         }
@@ -645,10 +696,10 @@ impl InodeData {
     /// Caller must hold sleep-lock.
     fn iupdate(&mut self) {
         let (dev, inum) = self.valid.unwrap();
-        let mut bp = BCACHE.bread(dev, inode_block(inum));
-        let dip = unsafe { (bp.data_ptr() as *mut DiskInode).offset(inode_offset(inum)) };
-        unsafe { ptr::write(dip, self.dinode) };
-        LOG.write(&mut bp);
+        let mut buf = BCACHE.bread(dev, inode_block(inum));
+        let dinode = unsafe { (buf.data_ptr() as *mut DiskInode).offset(inode_offset(inum)) };
+        unsafe { ptr::write(dinode, self.dinode) };
+        LOG.write(&mut buf);
     }
 
     /// Write a new directory entry (name, inum) into the directory this.
@@ -658,15 +709,16 @@ impl InodeData {
         }
 
         // Check that name is not present.
-        if let Some(inode) = self.dirlookup(&name) {
+        if let Some((inode, _)) = self.dirlookup(&name) {
             drop(inode);
             return Err("dirent already present");
         }
 
-        // Look for an empty DirEnt.
+        // Look for the offset of an empty DirEnt.
         let mut de = DirEnt::empty();
-        let offset = self.find_free_dirent(&mut de)?;
+        let offset = self.find_available_dirent_offset(&mut de)?;
 
+        // update the dirent
         for i in 0..DIRSIZ {
             de.name[i] = name[i];
             if name[i] == 0 {
@@ -685,13 +737,13 @@ impl InodeData {
         .or_else(|_| Err("failed to write dirent"))
     }
 
-    fn find_free_dirent(&mut self, de: &mut DirEnt) -> Result<usize, &'static str> {
+    /// returns the offset of the available entry.
+    fn find_available_dirent_offset(&mut self, de: &mut DirEnt) -> Result<usize, &'static str> {
         let de_size = mem::size_of::<DirEnt>();
-        let de_ptr = de as *mut _ as *mut u8;
         let mut offset = 0;
 
         for off in (0..self.dinode.size as usize).step_by(de_size) {
-            self.readi(false, de_ptr, off, de_size)
+            self.readi(false, de as *mut _ as *mut u8, off, de_size)
                 .or_else(|_| Err("failed to read entry in directory inode"))?;
             if de.inum == 0 {
                 offset = off;
@@ -699,6 +751,21 @@ impl InodeData {
         }
 
         Ok(offset)
+    }
+
+    /// Is the directory this empty except for '.' and '..' ?
+    fn is_dir_empty(&mut self) -> bool {
+        let mut de = DirEnt::empty();
+        let de_size = mem::size_of::<DirEnt>();
+        for off in (2 * de_size..self.dinode.size as usize).step_by(de_size) {
+            self.readi(false, &mut de as *mut _ as *mut u8, off, de_size)
+                .expect("is_dir_empty: failed to read entry in directory inode");
+            if de.inum != 0 {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 
@@ -860,7 +927,7 @@ mod tests {
     fn lookup_root_init_by_dirlookup() {
         let inode = INODE_TABLE.iget(ROOTDEV, ROOTINO);
         let mut idata = inode.ilock();
-        let init_inode = idata
+        let (init_inode, _) = idata
             .dirlookup(&[b'i', b'n', b'i', b't', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
             .expect("'init' not found in '/'");
         assert_eq!(7, init_inode.inum);
@@ -888,11 +955,21 @@ mod tests {
     }
 
     #[test_case]
-    fn lookup_parent() {
+    fn lookup_by_nameiparent() {
         let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
         let inode = INODE_TABLE
             .nameiparent(&[b'i', b'n', b'i', b't', 0], &mut name)
             .expect("the parent not found");
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        let cwd = pdata.cwd.as_ref().unwrap();
+        assert_eq!(cwd.dev, inode.dev);
+        assert_eq!(cwd.inum, inode.inum);
+        drop(inode);
+    }
+
+    #[test_case]
+    fn lookup_by_dot() {
+        let inode = INODE_TABLE.namei(&[b'.', 0]).expect("lookup");
         let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
         let cwd = pdata.cwd.as_ref().unwrap();
         assert_eq!(cwd.dev, inode.dev);
@@ -906,7 +983,7 @@ mod tests {
         let cwd = pdata.cwd.as_ref().unwrap();
         let mut idata = cwd.ilock();
         let mut de = DirEnt::empty();
-        let offset = idata.find_free_dirent(&mut de).expect("dirent");
+        let offset = idata.find_available_dirent_offset(&mut de).expect("dirent");
         assert_eq!(1008, offset);
         drop(idata);
     }

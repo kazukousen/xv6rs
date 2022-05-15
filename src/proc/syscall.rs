@@ -93,7 +93,7 @@ pub trait Syscall {
     /// TODO
     /// int unlink(char *file)
     /// Remove a file.
-    // 18
+    fn sys_unlink(&mut self) -> SysResult; // 18
 
     /// TODO
     /// int link(char *file1, char *file2)
@@ -322,6 +322,21 @@ impl Syscall for Proc {
         }
     }
 
+    /// 18
+    fn sys_unlink(&mut self) -> SysResult {
+        let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let null_pos = self.arg_str(0, &mut path).or_else(|msg| Err(msg))?;
+        let path = &path[0..=null_pos];
+
+        LOG.begin_op();
+        INODE_TABLE.unlink(&path).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?;
+
+        Ok(0)
+    }
+
     /// 20
     fn sys_mkdir(&mut self) -> SysResult {
         LOG.begin_op();
@@ -332,12 +347,7 @@ impl Syscall for Proc {
         })?;
         let path = &path[0..=null_pos];
 
-        let inode = INODE_TABLE
-            .create(&path, InodeType::Directory, 0, 0)
-            .or_else(|msg| {
-                LOG.end_op();
-                Err(msg)
-            })?;
+        let inode = INODE_TABLE.create(&path, InodeType::Directory, 0, 0);
         drop(inode);
         LOG.end_op();
         Ok(0)

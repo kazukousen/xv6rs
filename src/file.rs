@@ -37,7 +37,7 @@ impl File {
     pub fn open(path: &[u8], o_mode: i32) -> Option<Arc<Self>> {
         LOG.begin_op();
         let inode = if o_mode & O_CREATE > 0 {
-            INODE_TABLE.create(&path, InodeType::File, 0, 0).ok()
+            Some(INODE_TABLE.create(&path, InodeType::File, 0, 0))
         } else {
             INODE_TABLE.namei(&path)
         }
