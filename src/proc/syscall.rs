@@ -10,7 +10,7 @@ use crate::{
     process::PROCESS_TABLE,
 };
 
-use super::{elf, Proc};
+use super::{elf, Proc, MAXARG, MAXARGLEN};
 
 type SysResult = Result<usize, &'static str>;
 
@@ -105,9 +105,6 @@ pub trait Syscall {
     /// Release open file fd.
     fn sys_close(&mut self) -> SysResult; // 21
 }
-
-pub const MAXARG: usize = 16;
-pub const MAXARGLEN: usize = 64;
 
 impl Syscall for Proc {
     /// 1

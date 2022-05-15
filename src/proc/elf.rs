@@ -11,7 +11,7 @@ use crate::{
     sleeplock::SleepLockGuard,
 };
 
-use super::syscall::{MAXARG, MAXARGLEN};
+use super::{MAXARG, MAXARGLEN};
 
 const MAGIC: u32 = 0x464C457F;
 

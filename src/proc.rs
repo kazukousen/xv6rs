@@ -21,6 +21,9 @@ mod syscall;
 
 use self::syscall::Syscall;
 
+const MAXARG: usize = 16;
+const MAXARGLEN: usize = 64;
+
 #[repr(C)]
 pub struct Context {
     pub ra: usize,
