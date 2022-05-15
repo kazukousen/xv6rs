@@ -44,12 +44,10 @@ pub trait Syscall {
     /// Load a file and execute it with arguments; only returns if error.
     fn sys_exec(&mut self) -> SysResult; // 7
 
-    /// TODO
     /// int fstat(int fd, struct stat *st)
     /// Place info about an open file into *st.
     fn sys_fstat(&mut self) -> SysResult; // 8
 
-    /// TODO
     /// int chdir(char *dir)
     /// Change the current directory.
     fn sys_chdir(&mut self) -> SysResult; // 9
@@ -90,7 +88,6 @@ pub trait Syscall {
     /// Create a device file.
     // 17
 
-    /// TODO
     /// int unlink(char *file)
     /// Remove a file.
     fn sys_unlink(&mut self) -> SysResult; // 18
@@ -100,7 +97,6 @@ pub trait Syscall {
     /// Create another name (file2) for the file file1.
     // 19
 
-    /// TODO
     /// int mkdir(char *dir)
     /// Create a new directory.
     fn sys_mkdir(&mut self) -> SysResult; // 20
