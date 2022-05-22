@@ -4,6 +4,19 @@
 //! hold that lock with interrupts enabled. So when a CPU acquires any lock, the OS kernel always
 //! disables interrupts on that CPU. Intterupts may still occur on other CPUs, so an interrupt's
 //! `SpinLock<T>.lock()` can wait for a thread to release a spinlock; just not on the same CPU.
+//!
+//! Design in Rust:
+//! In xv6(C) implementation, the `lock` field in the structure is a pointer to the lock.
+//! This makes it difficult to tell if the lock is locked or not, so if the developer is not
+//! carefull, the data in the structure can be referenced without locking, causing a deadlock.
+//!
+//! Rust's type system has generics, so spin lock are designed as a smart pointer.
+//! Specific data is wrapped in a lock and a guard is returned when the lock is acquired.
+//! Therefore, references to data always acquire locks, and deadlock on acquisition can be avoided
+//! at the compiler level.
+//!
+//! With Rust's drop feature, if drop is implemented on the lock, locks can be automatically
+//! released when a variable goes out of scope.
 
 use core::{
     cell::{Cell, UnsafeCell},
