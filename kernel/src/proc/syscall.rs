@@ -324,14 +324,22 @@ impl Syscall for Proc {
             Err(msg)
         })?;
         let path = &path[0..=null_pos];
-        let major: u16 = self.arg_i32(1).or_else(|msg| {
-            LOG.end_op();
-            Err(msg)
-        })?.try_into().unwrap();
-        let minor: u16 = self.arg_i32(2).or_else(|msg| {
-            LOG.end_op();
-            Err(msg)
-        })?.try_into().unwrap();
+        let major: u16 = self
+            .arg_i32(1)
+            .or_else(|msg| {
+                LOG.end_op();
+                Err(msg)
+            })?
+            .try_into()
+            .unwrap();
+        let minor: u16 = self
+            .arg_i32(2)
+            .or_else(|msg| {
+                LOG.end_op();
+                Err(msg)
+            })?
+            .try_into()
+            .unwrap();
 
         let inode = INODE_TABLE.create(&path, InodeType::Device, major, minor);
         drop(inode);

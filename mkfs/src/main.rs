@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::env::args;
 use std::io::Seek;
 use std::ptr;
@@ -6,7 +7,6 @@ use std::{
     io::{Read, SeekFrom, Write},
     mem,
 };
-use std::cmp::min;
 
 const FSSIZE: usize = 1000; // size of file system in blocks
 const DIRSIZ: usize = 14;
@@ -93,18 +93,18 @@ impl SuperBlock {
     const fn new() -> Self {
         Self {
             magic: 0x10203040,
-            size: xint(FSSIZE as u32),
-            nblocks: xint(NBLOCKS as u32),
-            ninodes: xint(NINODES as u32),
-            nlog: xint(NLOG as u32),
-            logstart: xint(2),
-            inodestart: xint(2 + NLOG as u32),
-            bmapstart: xint(2 + NLOG as u32 + NINODEBLOCKS as u32),
+            size: FSSIZE as u32,
+            nblocks: NBLOCKS as u32,
+            ninodes: NINODES as u32,
+            nlog: NLOG as u32,
+            logstart: 2,
+            inodestart: 2 + NLOG as u32,
+            bmapstart: 2 + NLOG as u32 + NINODEBLOCKS as u32,
         }
     }
 
     fn inode_block(&self, inum: u32) -> u32 {
-        inum / u32::try_from(IPB).unwrap() + xint(self.inodestart)
+        inum / u32::try_from(IPB).unwrap() + self.inodestart
     }
 }
 
@@ -144,9 +144,9 @@ impl FSImage {
         }
 
         let mut dinode = DiskInode::new();
-        dinode.typ = xshort(typ);
-        dinode.nlink = xshort(1);
-        dinode.size = xint(0);
+        dinode.typ = typ;
+        dinode.nlink = 1;
+        dinode.size = 0;
         self.winode(inum, dinode);
         inum
     }
@@ -177,52 +177,70 @@ impl FSImage {
     fn iappend(&mut self, inum: u32, mut src: *const u8, mut n: usize) {
         let mut dinode = DiskInode::new();
         self.rinode(inum, &mut dinode);
-        let mut off = xint(dinode.size) as usize;
+        let mut off = dinode.size as usize;
         while n > 0 {
             let fbn = off / BSIZE;
             assert!(fbn < MAXFILE);
 
             // lookup the block number
             let bn = if fbn < NDIRECT {
-                if xint(dinode.addrs[fbn]) == 0 {
+                if dinode.addrs[fbn] == 0 {
                     unsafe {
-                        dinode.addrs[fbn] = xint(FREE_BLOCK as u32);
+                        dinode.addrs[fbn] = FREE_BLOCK as u32;
                         FREE_BLOCK += 1;
                     }
                 }
 
-                xint(dinode.addrs[fbn])
+                dinode.addrs[fbn]
             } else {
-                if xint(dinode.addrs[NDIRECT]) == 0 {
+                if dinode.addrs[NDIRECT] == 0 {
                     unsafe {
-                        dinode.addrs[NDIRECT] = xint(FREE_BLOCK as u32);
+                        dinode.addrs[NDIRECT] = FREE_BLOCK as u32;
                         FREE_BLOCK += 1;
                     }
                 }
                 let mut indirect = [0u32; NINDIRECT];
-                unsafe { self.rsect(xint(dinode.addrs[NDIRECT]), (indirect.as_mut_ptr() as *mut [u8; NINDIRECT * mem::size_of::<u32>()]).as_mut().unwrap()) };
+                unsafe {
+                    self.rsect(
+                        dinode.addrs[NDIRECT],
+                        (indirect.as_mut_ptr() as *mut [u8; NINDIRECT * mem::size_of::<u32>()])
+                            .as_mut()
+                            .unwrap(),
+                    )
+                };
                 if indirect[fbn - NDIRECT] == 0 {
                     unsafe {
-                        indirect[fbn - NDIRECT] = xint(FREE_BLOCK as u32);
-                        self.wsect(xint(dinode.addrs[NDIRECT]), (indirect.as_ptr() as *const [u8; NINDIRECT * mem::size_of::<u32>()]).as_ref().unwrap());
+                        indirect[fbn - NDIRECT] = FREE_BLOCK as u32;
+                        self.wsect(
+                            dinode.addrs[NDIRECT],
+                            (indirect.as_ptr() as *const [u8; NINDIRECT * mem::size_of::<u32>()])
+                                .as_ref()
+                                .unwrap(),
+                        );
                         FREE_BLOCK += 1;
                     }
                 }
 
-                xint(indirect[fbn - NDIRECT])
+                indirect[fbn - NDIRECT]
             };
 
             let n1 = min(n, (fbn + 1) * BSIZE - off);
             let mut buf = [0u8; BSIZE];
             self.rsect(bn, &mut buf);
-            unsafe{ ptr::copy(src, buf.as_mut_ptr().offset((off - fbn * BSIZE) as isize), n1) };
+            unsafe {
+                ptr::copy(
+                    src,
+                    buf.as_mut_ptr().offset((off - fbn * BSIZE) as isize),
+                    n1,
+                )
+            };
             self.wsect(bn, &buf);
             n -= n1;
             off += n1;
             src = unsafe { src.offset(n1 as isize) };
         }
 
-        dinode.size = xint(off as u32);
+        dinode.size = off as u32;
         self.winode(inum, dinode);
     }
 
@@ -231,22 +249,10 @@ impl FSImage {
         assert!(used < BSIZE * 8);
         let mut buf = [0u8; BSIZE];
         for i in 0..used {
-            buf[i/8] = buf[i/8] | (0x1 << (i%8));
+            buf[i / 8] = buf[i / 8] | (0x1 << (i % 8));
         }
-        self.wsect(unsafe { xint(SB.bmapstart) }, &buf);
+        self.wsect(unsafe { SB.bmapstart }, &buf);
     }
-}
-
-const fn xshort(x: u16) -> u16 {
-    x
-    // let bytes = x.to_be_bytes();
-    // (bytes[1] as u16) << 8 | bytes[0] as u16
-}
-
-const fn xint(x: u32) -> u32 {
-    x
-    // let bytes = x.to_be_bytes();
-    // (bytes[3] as u32) << 24 | (bytes[2] as u32) << 16 | (bytes[1] as u32) << 8 | bytes[0] as u32
 }
 
 fn main() {
@@ -282,13 +288,21 @@ fn main() {
     assert_eq!(ROOTINO, root_ino);
 
     let mut de = DirEnt::empty();
-    de.inum = xshort(root_ino as u16);
+    de.inum = root_ino as u16;
     // append directory entry "." into the root inode
     de.name[0] = b'.';
-    fsimg.iappend(root_ino, &de as *const _ as *const u8, mem::size_of::<DirEnt>());
+    fsimg.iappend(
+        root_ino,
+        &de as *const _ as *const u8,
+        mem::size_of::<DirEnt>(),
+    );
     // append directory entry ".." into the root inode
     de.name[1] = b'.';
-    fsimg.iappend(root_ino, &de as *const _ as *const u8, mem::size_of::<DirEnt>());
+    fsimg.iappend(
+        root_ino,
+        &de as *const _ as *const u8,
+        mem::size_of::<DirEnt>(),
+    );
 
     for user_prog in args().skip(2).into_iter() {
         println!("{}", user_prog);
@@ -310,11 +324,15 @@ fn main() {
         let inum = fsimg.ialloc(InodeType::File as u16);
 
         let mut de = DirEnt::empty();
-        de.inum = xshort(inum as u16);
+        de.inum = inum as u16;
         for i in 0..user_prog.as_bytes().len() {
             de.name[i] = user_prog.as_bytes()[i];
         }
-        fsimg.iappend(root_ino, &de as *const _ as *const u8, mem::size_of::<DirEnt>());
+        fsimg.iappend(
+            root_ino,
+            &de as *const _ as *const u8,
+            mem::size_of::<DirEnt>(),
+        );
 
         let mut buf = [0u8; BSIZE];
         while f.read(&mut buf).unwrap() > 0 {
@@ -323,13 +341,12 @@ fn main() {
         drop(f);
     }
 
-
     // fix size of root inode fir
     let mut dinode = DiskInode::new();
     fsimg.rinode(root_ino, &mut dinode);
-    let mut off = xint(dinode.size) as usize;
+    let mut off = dinode.size as usize;
     off = ((off / BSIZE) + 1) * BSIZE;
-    dinode.size = xint(off as u32);
+    dinode.size = off as u32;
     fsimg.winode(root_ino, dinode);
 
     unsafe { fsimg.balloc(FREE_BLOCK.try_into().unwrap()) };
@@ -343,8 +360,8 @@ mod tests {
 
     #[test]
     fn test_little_endians() {
-        assert_eq!(256u16, xshort(1u16));
-        assert_eq!(16777216u32, xint(1u32));
+        assert_eq!(256u16, 1u16);
+        assert_eq!(16777216u32, 1u32);
     }
 
     #[test]
