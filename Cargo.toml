@@ -4,3 +4,11 @@ members = [
   "kernel",
 ]
 
+# ref: https://doc.rust-lang.org/cargo/reference/profiles.html
+# ref: https://doc.rust-lang.org/cargo/reference/profiles.html#panic
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
