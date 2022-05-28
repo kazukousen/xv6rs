@@ -1,0 +1,22 @@
+[package]
+name = "xv6rs-kernel"
+version = "0.1.0"
+edition = "2021"
+build = "./build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+cc = "1.0.25"
+
+[dependencies]
+array-macro = "2.1.1"
+bitflags = "1.3.2"
+
+# ref: https://doc.rust-lang.org/cargo/reference/profiles.html
+# ref: https://doc.rust-lang.org/cargo/reference/profiles.html#panic
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
