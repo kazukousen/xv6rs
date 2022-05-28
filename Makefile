@@ -15,7 +15,7 @@ $(KERNEL_TARGET_BIN): fetch
 
 .PHONY: fetch
 fetch:
-	$(CARGO) fetch --locked
+	$(CARGO) fetch
 
 .PHONY: build
 build: $(KERNEL_TARGET_BIN)
