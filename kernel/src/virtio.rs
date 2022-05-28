@@ -225,7 +225,7 @@ impl Disk {
             let id = self.used.ring[(self.used_idx % NUM as u32) as usize].id as usize;
 
             if self.info[id].status != 0 {
-                panic!("virtio_intr: status");
+                panic!("virtio_intr: status={}", self.info[id].status);
             }
 
             // disk is done

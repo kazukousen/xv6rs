@@ -86,7 +86,7 @@ pub trait Syscall {
     /// TODO
     /// int mknod(char *file, int, int)
     /// Create a device file.
-    // 17
+    fn sys_mknod(&mut self) -> SysResult; // 17
 
     /// int unlink(char *file)
     /// Remove a file.
@@ -313,6 +313,30 @@ impl Syscall for Proc {
             None => Err("sys_write"),
             Some(f) => f.write(addr, n as usize),
         }
+    }
+
+    /// 17
+    fn sys_mknod(&mut self) -> SysResult {
+        LOG.begin_op();
+        let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let null_pos = self.arg_str(0, &mut path).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?;
+        let path = &path[0..=null_pos];
+        let major: u16 = self.arg_i32(1).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?.try_into().unwrap();
+        let minor: u16 = self.arg_i32(2).or_else(|msg| {
+            LOG.end_op();
+            Err(msg)
+        })?.try_into().unwrap();
+
+        let inode = INODE_TABLE.create(&path, InodeType::Device, major, minor);
+        drop(inode);
+        LOG.end_op();
+        Ok(0)
     }
 
     /// 18
