@@ -2,6 +2,7 @@
 
 members = [
   "kernel",
+  "mkfs",
 ]
 
 # ref: https://doc.rust-lang.org/cargo/reference/profiles.html
