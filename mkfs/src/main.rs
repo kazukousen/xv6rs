@@ -8,12 +8,13 @@ use std::{
     mem,
 };
 
-const FSSIZE: usize = 1000; // size of file system in blocks
+const FSSIZE: usize = 200000; // size of file system in blocks
 const DIRSIZ: usize = 14;
 const BSIZE: usize = 1024; // size of disk block
-const NDIRECT: usize = 12;
+const NDIRECT: usize = 11;
 const NINDIRECT: usize = BSIZE / mem::size_of::<u32>();
-const MAXFILE: usize = NDIRECT + NINDIRECT;
+const NDINDIRECT: usize = NINDIRECT;
+const MAXFILE: usize = NDIRECT + NINDIRECT + NINDIRECT * NDINDIRECT;
 // number of inodes in a single block
 const IPB: usize = BSIZE / mem::size_of::<DiskInode>();
 const MAXOPBLOCKS: usize = 10; // max # of blocks any FS op writes
@@ -59,7 +60,7 @@ struct DiskInode {
     minor: u16,                // minor device number (Device Type only)
     nlink: u16,                // number of directory entries that refer to a file
     size: u32,                 // size of file (bytes)
-    addrs: [u32; NDIRECT + 1], // data blocks addresses
+    addrs: [u32; NDIRECT + 2], // data blocks addresses
 }
 
 impl DiskInode {
@@ -70,7 +71,7 @@ impl DiskInode {
             minor: 0,
             nlink: 0,
             size: 0,
-            addrs: [0u32; NDIRECT + 1],
+            addrs: [0u32; NDIRECT + 2],
         }
     }
 }
@@ -184,6 +185,7 @@ impl FSImage {
 
             // lookup the block number
             let bn = if fbn < NDIRECT {
+                // in the direct blocks
                 if dinode.addrs[fbn] == 0 {
                     unsafe {
                         dinode.addrs[fbn] = FREE_BLOCK as u32;
@@ -192,8 +194,13 @@ impl FSImage {
                 }
 
                 dinode.addrs[fbn]
-            } else {
+            } else if fbn < NDIRECT + NINDIRECT {
+                // in the indirect blocks
+
+                let pos = fbn - NDIRECT;
+
                 if dinode.addrs[NDIRECT] == 0 {
+                    // allocate number of the indirect block of the inode
                     unsafe {
                         dinode.addrs[NDIRECT] = FREE_BLOCK as u32;
                         FREE_BLOCK += 1;
@@ -208,9 +215,9 @@ impl FSImage {
                             .unwrap(),
                     )
                 };
-                if indirect[fbn - NDIRECT] == 0 {
+                if indirect[pos] == 0 {
                     unsafe {
-                        indirect[fbn - NDIRECT] = FREE_BLOCK as u32;
+                        indirect[pos] = FREE_BLOCK as u32;
                         self.wsect(
                             dinode.addrs[NDIRECT],
                             (indirect.as_ptr() as *const [u8; NINDIRECT * mem::size_of::<u32>()])
@@ -221,7 +228,69 @@ impl FSImage {
                     }
                 }
 
-                indirect[fbn - NDIRECT]
+                indirect[pos]
+            } else {
+                // in the double indirect blocks
+
+                let indirect_index = (fbn - NDIRECT - NINDIRECT) / NDINDIRECT;
+
+                if dinode.addrs[NDIRECT + 1] == 0 {
+                    // allocate the double indirect block
+                    unsafe {
+                        dinode.addrs[NDIRECT + 1] = FREE_BLOCK as u32;
+                        FREE_BLOCK += 1;
+                    }
+                }
+                let mut double_indirect = [0u32; NDINDIRECT];
+                unsafe {
+                    self.rsect(
+                        dinode.addrs[NDIRECT + 1],
+                        (double_indirect.as_mut_ptr()
+                            as *mut [u8; NDINDIRECT * mem::size_of::<u32>()])
+                            .as_mut()
+                            .unwrap(),
+                    )
+                };
+                if double_indirect[indirect_index] == 0 {
+                    // allocate an indirect block
+                    unsafe {
+                        double_indirect[indirect_index] = FREE_BLOCK as u32;
+                        self.wsect(
+                            dinode.addrs[NDIRECT + 1],
+                            (double_indirect.as_ptr()
+                                as *const [u8; NDINDIRECT * mem::size_of::<u32>()])
+                                .as_ref()
+                                .unwrap(),
+                        );
+                        FREE_BLOCK += 1;
+                    }
+                }
+
+                let mut indirect = [0u32; NINDIRECT];
+                unsafe {
+                    self.rsect(
+                        double_indirect[indirect_index],
+                        (indirect.as_mut_ptr() as *mut [u8; NINDIRECT * mem::size_of::<u32>()])
+                            .as_mut()
+                            .unwrap(),
+                    )
+                };
+
+                let pos = (fbn - NDIRECT - NINDIRECT) % NDINDIRECT;
+                if indirect[pos] == 0 {
+                    unsafe {
+                        indirect[pos] = FREE_BLOCK as u32;
+                        self.wsect(
+                            double_indirect[indirect_index],
+                            (indirect.as_ptr() as *mut [u8; NINDIRECT * mem::size_of::<u32>()])
+                                .as_ref()
+                                .unwrap(),
+                        );
+                        FREE_BLOCK += 1;
+                    }
+                }
+
+                indirect[pos]
             };
 
             let n1 = min(n, (fbn + 1) * BSIZE - off);
@@ -309,8 +378,11 @@ fn main() {
         let mut f = File::open(&user_prog).unwrap();
 
         let mut user_prog = user_prog.as_str();
-        if user_prog.len() > 5 && user_prog.as_bytes()[0..5] == [b'u', b's', b'e', b'r', b'/'] {
-            user_prog = &user_prog[5..];
+        for i in (0..user_prog.len()).rev() {
+            if user_prog.as_bytes()[i] == b'/' {
+                user_prog = &user_prog[i + 1..user_prog.len()];
+                break;
+            }
         }
 
         // Skip leading _ in name when writing to file system.

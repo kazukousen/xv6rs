@@ -513,11 +513,12 @@ impl InodeData {
             if self.dinode.addrs[offset] != 0 {
                 return self.dinode.addrs[offset];
             }
-            let bn = bmap::alloc(dev);
-            self.dinode.addrs[offset] = bn;
-            return bn;
+            let data_bn = bmap::alloc(dev);
+            self.dinode.addrs[offset] = data_bn;
+            return data_bn;
         }
 
+        // 0..11 12..267 268..(268 + 256 * 256)
         offset -= NDIRECT;
 
         if offset < NINDIRECT {
@@ -529,17 +530,53 @@ impl InodeData {
                 self.dinode.addrs[NDIRECT] = bn;
                 bn
             };
+            // the block number of the data block.
             let mut buf = BCACHE.bread(dev, indirect_bn);
-
-            let bn_ptr = unsafe { (buf.data_ptr_mut() as *mut u32).offset(offset as isize) };
-            let bn = unsafe { ptr::read(bn_ptr) };
-            if bn == 0 {
+            let data_bn_ptr = unsafe { (buf.data_ptr_mut() as *mut u32).offset(offset as isize) };
+            let data_bn = unsafe { ptr::read(data_bn_ptr) };
+            if data_bn == 0 {
                 let freed = bmap::alloc(dev);
-                unsafe { ptr::write(bn_ptr, freed) };
+                unsafe { ptr::write(data_bn_ptr, freed) };
                 LOG.write(&mut buf);
             }
             drop(buf);
-            return bn;
+            return data_bn;
+        }
+
+        offset -= NINDIRECT;
+
+        if offset < NDINDIRECT * NINDIRECT {
+            // load the double indirect block, allocating if necessary.
+            let d_indirect_bn = if self.dinode.addrs[NDIRECT + 1] != 0 {
+                self.dinode.addrs[NDIRECT + 1]
+            } else {
+                let bn = bmap::alloc(dev);
+                self.dinode.addrs[NDIRECT + 1] = bn;
+                bn
+            };
+            // load the indirect block, allocating if necessary.
+            let mut buf = BCACHE.bread(dev, d_indirect_bn);
+            let indirect_bn_ptr =
+                unsafe { (buf.data_ptr_mut() as *mut u32).offset((offset / NDINDIRECT) as isize) };
+            let indirect_bn = unsafe { ptr::read(indirect_bn_ptr) };
+            if indirect_bn == 0 {
+                let freed = bmap::alloc(dev);
+                unsafe { ptr::write(indirect_bn_ptr, freed) };
+                LOG.write(&mut buf);
+            }
+            drop(buf);
+            // the block number of the data block.
+            let mut buf = BCACHE.bread(dev, indirect_bn);
+            let data_bn_ptr =
+                unsafe { (buf.data_ptr_mut() as *mut u32).offset((offset % NDINDIRECT) as isize) };
+            let data_bn = unsafe { ptr::read(data_bn_ptr) };
+            if data_bn == 0 {
+                let freed = bmap::alloc(dev);
+                unsafe { ptr::write(data_bn_ptr, freed) };
+                LOG.write(&mut buf);
+            }
+            drop(buf);
+            return data_bn;
         }
 
         panic!("bmap: out of range");
@@ -769,9 +806,10 @@ impl InodeData {
     }
 }
 
-const NDIRECT: usize = 12;
+const NDIRECT: usize = 11;
 const NINDIRECT: usize = BSIZE / mem::size_of::<u32>();
-const MAXFILE: usize = NDIRECT + NINDIRECT;
+const NDINDIRECT: usize = NINDIRECT;
+const MAXFILE: usize = NDIRECT + NINDIRECT + NINDIRECT * NDINDIRECT;
 
 /// On disk inode structure
 #[repr(C)]
@@ -782,7 +820,7 @@ struct DiskInode {
     minor: u16,                // minor device number (Device Type only)
     nlink: u16,                // number of directory entries that refer to a file
     size: u32,                 // size of file (bytes)
-    addrs: [u32; NDIRECT + 1], // data blocks addresses
+    addrs: [u32; NDIRECT + 2], // data blocks addresses
 }
 
 impl DiskInode {
@@ -793,7 +831,7 @@ impl DiskInode {
             minor: 0,
             nlink: 0,
             size: 0,
-            addrs: [0; NDIRECT + 1],
+            addrs: [0; NDIRECT + 2],
         }
     }
 }
