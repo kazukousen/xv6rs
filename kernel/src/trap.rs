@@ -107,9 +107,10 @@ unsafe fn handle_trap(is_user: bool) {
         }
         ScauseType::Unknown(v) => {
             panic!(
-                "handle_trap: scause {:#x} stval {:#x}",
+                "handle_trap: scause {:#x} stval {:#x} is_user={}",
                 v,
-                register::stval::read()
+                register::stval::read(),
+                is_user,
             );
         }
     }
