@@ -1,14 +1,18 @@
 CARGO_TARGET = riscv64imac-unknown-none-elf
+CARGO_MKFS_TARGET ?= $(shell rustup show | sed -n 's/^Default host: \(.*\)/\1/p')
 TARGET = target/$(CARGO_TARGET)/debug
+MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/debug
 ifdef CARGO_RELEASE
 	RELEASE = --release
 	TARGET = target/$(CARGO_TARGET)/release
+	MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/release
 endif
 CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 
 KERNEL_TARGET_BIN = $(TARGET)/xv6rs-kernel
+MKFS_TARGET_BIN = $(MKFS_TARGET)/xv6rs-mkfs
 
 $(KERNEL_TARGET_BIN): fetch
 	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel
@@ -39,31 +43,29 @@ test: fetch fs.img
 						| jq -r 'select(.profile.test == true) | .filenames[0]'))
 	$(QEMU) $(QEMUOPTS) -kernel $(TEST_LIB)
 
-
-U=user
-
 UPROGS=\
-	$U/_cat\
-	$U/_echo\
-	$U/_forktest\
-	$U/_grep\
-	$U/_init\
-	$U/_kill\
-	$U/_ln\
-	$U/_ls\
-	$U/_mkdir\
-	$U/_rm\
-	$U/_sh\
-	$U/_stressfs\
-	$U/_usertests\
-	$U/_grind\
-	$U/_wc\
-	$U/_zombie\
+	user/_cat\
+	user/_echo\
+	user/_forktest\
+	user/_grep\
+	user/_init\
+	user/_kill\
+	user/_ln\
+	user/_ls\
+	user/_mkdir\
+	user/_rm\
+	user/_sh\
+	user/_stressfs\
+	user/_usertests\
+	user/_grind\
+	user/_wc\
+	user/_zombie\
 
-CARGO_MKFS_TARGET ?= $(shell rustup show | sed -n 's/^Default host: \(.*\)/\1/p')
+$(MKFS_TARGET_BIN): fetch
+	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
 
-fs.img: $(UPROGS)
-	$(CARGO) run --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs -- $@ $(UPROGS)
+fs.img: $(MKFS_TARGET_BIN) $(UPROGS)
+	$(MKFS_TARGET_BIN) $@ $(UPROGS)
 
 .PHONY: clean
 clean:
