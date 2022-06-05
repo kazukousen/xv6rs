@@ -39,17 +39,17 @@ impl<'a> Args<'a> {
 impl<'a> Iterator for Args<'a> {
     type Item = &'a str;
     fn next(&mut self) -> Option<Self::Item> {
-        let argv = self.argv as *const [&'a str] as *const *const u8;
-        let args = unsafe { from_raw_parts(argv, self.argc) };
         if self.count >= self.argc {
             return None;
         }
+
+        let argv = self.argv as *const [&'a str] as *const *const u8;
+        let args = unsafe { from_raw_parts(argv, self.argc) };
         let arg = unsafe { args.get_unchecked(self.count) };
-        let n = unsafe { strlen(*arg) };
-        let s = unsafe { from_utf8_unchecked(from_raw_parts(*arg, n)) };
 
         self.count += 1;
 
+        let s = unsafe { from_utf8_unchecked(from_raw_parts(*arg, strlen(*arg))) };
         Some(s)
     }
 }
