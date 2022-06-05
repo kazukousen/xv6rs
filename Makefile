@@ -13,16 +13,20 @@ CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 
 KERNEL_TARGET_BIN = $(TARGET)/xv6rs-kernel
 MKFS_TARGET_BIN = $(MKFS_TARGET)/xv6rs-mkfs
+USER_TARGET_LIB = $(TARGET)/xv6rs-user
 
 $(KERNEL_TARGET_BIN): fetch
 	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel
+
+$(USER_TARGET_LIB): fetch
+	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
 
 .PHONY: fetch
 fetch:
 	$(CARGO) fetch
 
 .PHONY: build
-build: $(KERNEL_TARGET_BIN)
+build: $(KERNEL_TARGET_BIN) $(USER_TARGET_LIB)
 
 QEMU ?= qemu-system-riscv64
 QEMUOPTS = -M virt \
@@ -60,6 +64,8 @@ UPROGS=\
 	user/_grind\
 	user/_wc\
 	user/_zombie\
+	$(TARGET)/helloworld\
+	$(TARGET)/exit42\
 
 $(MKFS_TARGET_BIN): fetch
 	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs

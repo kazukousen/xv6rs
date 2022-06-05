@@ -14,6 +14,7 @@ use crate::{
 use super::{MAXARG, MAXARGLEN};
 
 const MAGIC: u32 = 0x464C457F;
+const PROG_LOAD: u32 = 1;
 
 pub fn load(
     p: &mut ProcData,
@@ -81,6 +82,12 @@ pub fn load(
             return Err("cannot read the program section");
         };
         let ph = unsafe { ph.assume_init() };
+        if ph.typ != PROG_LOAD {
+            continue;
+        }
+        if ph.memsz == 0 {
+            continue;
+        }
 
         size = match pgt.uvm_alloc(size, (ph.vaddr + ph.memsz) as usize) {
             Err(msg) => {
@@ -93,6 +100,14 @@ pub fn load(
             Ok(size) => size,
         };
 
+        if ph.vaddr as usize % PAGESIZE != 0 {
+            pgt.unmap_user_page_table(size);
+            drop(idata);
+            drop(inode);
+            LOG.end_op();
+            return Err("program header vaddr not aligned page size");
+        }
+
         if let Err(msg) = load_segment(
             &mut pgt,
             &mut idata,
@@ -100,6 +115,10 @@ pub fn load(
             ph.off as usize,
             ph.filesz as usize,
         ) {
+            pgt.unmap_user_page_table(size);
+            drop(idata);
+            drop(inode);
+            LOG.end_op();
             return Err(msg);
         };
     }
@@ -198,31 +217,36 @@ fn load_segment(
 }
 
 /// File header
+#[derive(Debug)]
 #[repr(C)]
 struct ELFHeader {
     magic: u32,
-    elf: [u8; 12],
-    typed: u16,
+    bit_size: u8, // This byte is set to either `1` or `2` to signify 32- or 64-bit format, respectively.
+    endian: u8, // This byte is set to either `1` or `2` to littler or big endianness, respectively.
+    elf_version: u8, // Set 1 for the original and current version of ELF.
+    os_abi: u8, // Identifies the target operating system ABI.
+    abi_version: u8,
+    padding: [u8; 7], // reserved padding bytes, currently unused.
+    typ: u16,
     machine: u16,
     version: u32,
-    entry: u64,
-    // program header position
-    phoff: u64,
-    shoff: u64,
+    entry: u64, // the memory address of the entry point from where the process starts executing.
+    phoff: u64, // points to the start of the program header table.
+    shoff: u64, // points to the start of the section header table.
     flags: u32,
     ehsize: u16,
     phentsize: u16,
-    // number of program headers
-    phnum: u16,
+    phnum: u16, // number of program headers
     shentsize: u16,
     shnum: u16,
     shstrndx: u16,
 }
 
 /// Program section header
+#[derive(Debug)]
 #[repr(C)]
 struct ProgHeader {
-    typed: u32,
+    typ: u32,
     flags: u32,
     off: u64,
     vaddr: u64,
