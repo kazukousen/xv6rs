@@ -49,7 +49,7 @@ test: fetch fs.img
 
 UPROGS=\
 	$(TARGET)/cat\
-	user/_echo\
+	$(TARGET)/echo\
 	user/_forktest\
 	user/_grep\
 	user/_init\
