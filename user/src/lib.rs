@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
+pub mod fcntl;
 pub mod printf;
 pub mod syscall;
 
@@ -21,12 +22,12 @@ fn abort() -> ! {
 
 pub struct Args<'a> {
     argc: usize,
-    argv: &'a *const u8,
+    argv: &'a [&'a str],
     count: usize,
 }
 
 impl<'a> Args<'a> {
-    pub fn new(argc: i32, argv: &'a *const u8) -> Self {
+    pub fn new(argc: i32, argv: &'a [&'a str]) -> Self {
         Self {
             argc: argc as usize,
             argv,
@@ -38,7 +39,7 @@ impl<'a> Args<'a> {
 impl<'a> Iterator for Args<'a> {
     type Item = &'a str;
     fn next(&mut self) -> Option<Self::Item> {
-        let argv = self.argv as *const *const u8;
+        let argv = self.argv as *const [&'a str] as *const *const u8;
         let args = unsafe { from_raw_parts(argv, self.argc) };
         if self.count >= self.argc {
             return None;

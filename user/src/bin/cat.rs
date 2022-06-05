@@ -8,7 +8,7 @@ use xv6rs_user::{
 };
 
 #[no_mangle]
-pub unsafe extern "C" fn _start(argc: i32, argv: &*const u8) -> ! {
+pub unsafe extern "C" fn _start(argc: i32, argv: &[&str]) -> ! {
     if argc <= 1 {
         println!("argc 0-1");
         sys_exit(0);

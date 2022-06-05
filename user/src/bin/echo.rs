@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 
-use xv6rs_user::{syscall::sys_exit, Args, print, println};
+use xv6rs_user::{print, println, syscall::sys_exit, Args};
 
 #[no_mangle]
-extern "C" fn _start(argc: i32, argv: &*const u8) {
+extern "C" fn _start(argc: i32, argv: &[&str]) {
     if argc < 2 {
         sys_exit(1);
     }
@@ -20,4 +20,3 @@ extern "C" fn _start(argc: i32, argv: &*const u8) {
 
     sys_exit(0);
 }
-
