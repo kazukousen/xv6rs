@@ -54,9 +54,6 @@ impl<'a> Iterator for Args<'a> {
     }
 }
 
-const MAXARG: usize = 16;
-const MAXARGLEN: usize = 64;
-
 unsafe fn strlen(mut c: *const u8) -> usize {
     let mut pos = 0;
     while *c != 0 {
