@@ -52,7 +52,7 @@ UPROGS=\
 	$(TARGET)/echo\
 	user/_forktest\
 	user/_grep\
-	user/_init\
+	$(TARGET)/init\
 	user/_kill\
 	user/_ln\
 	user/_ls\
