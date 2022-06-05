@@ -48,7 +48,7 @@ test: fetch fs.img
 	$(QEMU) $(QEMUOPTS) -kernel $(TEST_LIB)
 
 UPROGS=\
-	user/_cat\
+	$(TARGET)/cat\
 	user/_echo\
 	user/_forktest\
 	user/_grep\
@@ -70,8 +70,8 @@ UPROGS=\
 $(MKFS_TARGET_BIN): fetch
 	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
 
-fs.img: $(MKFS_TARGET_BIN) $(UPROGS)
-	$(MKFS_TARGET_BIN) $@ $(UPROGS)
+fs.img: $(MKFS_TARGET_BIN) $(UPROGS) README.md
+	$(MKFS_TARGET_BIN) $@ $(UPROGS) README.md
 
 .PHONY: clean
 clean:
