@@ -982,17 +982,6 @@ mod tests {
     }
 
     #[test_case]
-    fn lookup_console() {
-        let inode = INODE_TABLE
-            .namei(&[b'c', b'o', b'n', b's', b'o', b'l', b'e', 0])
-            .expect("'/console' not found");
-        assert_eq!(19, inode.inum);
-        let idata = inode.ilock();
-        assert_eq!(InodeType::Device, idata.get_type());
-        drop(idata);
-    }
-
-    #[test_case]
     fn lookup_by_nameiparent() {
         let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
         let inode = INODE_TABLE

@@ -67,11 +67,13 @@ UPROGS=\
 	$(TARGET)/helloworld\
 	$(TARGET)/exit42\
 
+$(UPROGS): $(USER_TARGET_LIB)
+
 $(MKFS_TARGET_BIN): fetch
 	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
 
 fs.img: $(MKFS_TARGET_BIN) $(UPROGS) README.md
-	$(MKFS_TARGET_BIN) $@ $(UPROGS) README.md
+	$(MKFS_TARGET_BIN) $@ README.md $(UPROGS)
 
 .PHONY: clean
 clean:

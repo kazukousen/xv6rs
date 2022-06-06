@@ -83,39 +83,3 @@ fn bzero(dev: u32, blockno: u32) {
 fn bmap_block(bn: u32) -> u32 {
     bn / BPB as u32 + unsafe { SB.bmapstart }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test_case]
-    fn bmap() {
-        // check free
-        let buf = BCACHE.bread(1, unsafe { SB.bmapstart });
-        let buf_data = unsafe { buf.data_ptr().as_ref().unwrap() };
-        assert_eq!(0, buf_data[72] & 1 << 4);
-        drop(buf);
-
-        LOG.begin_op();
-        let bn = alloc(1);
-        LOG.end_op();
-
-        // check in use
-        let buf = BCACHE.bread(1, unsafe { SB.bmapstart });
-        let buf_data = unsafe { buf.data_ptr().as_ref().unwrap() };
-        assert_eq!(1 << 4, buf_data[72] & 1 << 4);
-        drop(buf);
-
-        LOG.begin_op();
-        free(1, bn);
-        LOG.end_op();
-
-        assert_eq!(580, bn); // 580 / 8 = 72, 580 % 8 = 4
-
-        // check free
-        let buf = BCACHE.bread(1, unsafe { SB.bmapstart });
-        let buf_data = unsafe { buf.data_ptr().as_ref().unwrap() };
-        assert_eq!(0, buf_data[72] & 1 << 4);
-        drop(buf);
-    }
-}
