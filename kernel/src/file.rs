@@ -216,7 +216,6 @@ impl File {
     }
 
     /// Get metadata about the file.
-    /// `addr` is a user virtual address, pointing to a struct stat.
     pub fn stat(&self, st: &mut FileStat) {
         match &self.inner {
             FileInner::Inode(ref f) => {

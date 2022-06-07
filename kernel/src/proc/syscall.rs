@@ -200,17 +200,18 @@ impl Syscall for Proc {
     /// 8
     fn sys_fstat(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
+        // `addr` is a user virtual address, pointing to a struct stat.
         let addr = self.arg_raw(1)?;
 
-        let pdata = self.data.get_mut();
-
-        let mut st = FileStat::uninit();
-
-        let f = pdata.o_files[fd as usize]
+        // lookup the open file.
+        let f = self.data.get_mut().o_files[fd as usize]
             .as_ref()
             .ok_or_else(|| "file not found")?;
+
+        let mut st = FileStat::uninit();
         f.stat(&mut st);
 
+        // copy data of struct stat from kernel to user.
         self.data.get_mut().copy_out(
             addr,
             &st as *const _ as *const u8,
