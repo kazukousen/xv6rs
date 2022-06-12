@@ -2,6 +2,7 @@
 #![feature(alloc_error_handler)]
 
 pub mod fcntl;
+pub mod fstat;
 pub mod printf;
 pub mod syscall;
 
@@ -54,11 +55,13 @@ impl<'a> Iterator for Args<'a> {
     }
 }
 
-unsafe fn strlen(mut c: *const u8) -> usize {
+pub fn strlen(mut c: *const u8) -> usize {
     let mut pos = 0;
-    while *c != 0 {
-        pos += 1;
-        c = c.offset(1);
+    unsafe {
+        while *c != 0 {
+            pos += 1;
+            c = c.offset(1);
+        }
     }
     pos
 }

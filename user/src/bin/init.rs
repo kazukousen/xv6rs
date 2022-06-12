@@ -9,9 +9,9 @@ use xv6rs_user::{
 
 #[no_mangle]
 extern "C" fn _start() {
-    if sys_open("console", O_RDWR) < 0 {
-        sys_mknod("console", 1, 1);
-        sys_open("console", O_RDWR);
+    if sys_open("console\0", O_RDWR) < 0 {
+        sys_mknod("console\0", 1, 1);
+        sys_open("console\0", O_RDWR);
     }
 
     sys_dup(0); // stdio
@@ -24,7 +24,7 @@ extern "C" fn _start() {
             sys_exit(1);
         }
         if pid == 0 {
-            let argv = [];
+            let argv = ["sh", "\0"];
             sys_exec("sh\0", &argv);
             println!("init: exec failed");
             sys_exit(1);
