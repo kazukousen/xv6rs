@@ -91,7 +91,9 @@ fn ls(path: &str) {
                 );
             }
         }
-        InodeType::File => {}
+        InodeType::File => {
+            println!("{} {:?} {} {}", path, st.typ, st.inum, st.size);
+        }
         _ => {}
     }
 
