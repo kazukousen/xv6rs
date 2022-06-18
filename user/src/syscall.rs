@@ -1,3 +1,5 @@
+use crate::fstat::FileStat;
+
 extern "C" {
     /// int fork()
     fn __fork() -> i32;
@@ -9,6 +11,8 @@ extern "C" {
     fn __read(fd: i32, addr: *const u8, n: i32) -> i32;
     /// int exec(char *file, char *argv[])
     fn __exec(addr: *const u8, argv: *const *const u8) -> i32;
+    /// int fstat(int fd, struct stat *st)
+    fn __fstat(fd: i32, st: *mut FileStat) -> i32;
     /// int dup(int fd)
     fn __dup(fd: i32);
     /// int open(char *file, int flags)
@@ -39,6 +43,10 @@ pub fn sys_read(fd: i32, buf: &mut [u8]) -> i32 {
 
 pub fn sys_exec(path: &str, argv: &[&str]) -> i32 {
     unsafe { __exec(path.as_ptr(), argv as *const [&str] as *const _) }
+}
+
+pub fn sys_fstat(fd: i32, st: &mut FileStat) -> i32 {
+    unsafe { __fstat(fd, st as *mut _) }
 }
 
 pub fn sys_dup(fd: i32) {

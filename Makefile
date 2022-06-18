@@ -55,7 +55,7 @@ UPROGS=\
 	$(TARGET)/init\
 	user/_kill\
 	user/_ln\
-	user/_ls\
+	$(TARGET)/ls\
 	user/_mkdir\
 	user/_rm\
 	user/_sh\
