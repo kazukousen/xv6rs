@@ -7,6 +7,7 @@ use crate::{
     file::File,
     fs::{FileStat, InodeType, INODE_TABLE},
     log::LOG,
+    net::SockAddr,
     process::PROCESS_TABLE,
 };
 
@@ -104,6 +105,28 @@ pub trait Syscall {
     /// int close(int fd)
     /// Release open file fd.
     fn sys_close(&mut self) -> SysResult; // 21
+
+    /// int socket(int domain, int type, int protocol)
+    /// Create a new socket.
+    fn sys_socket(&mut self) -> SysResult; // 22
+
+    /// int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+    /// Bind a socket to an address. Usually, a server employs this call to bind its socket to a
+    /// well-known address so that clients can locate the socket.
+    fn sys_bind(&mut self) -> SysResult; // 23
+
+    /// int listen(int sockfd, int backlog)
+    /// Allow a stream socket to accept incoming connections from other sockets.
+    fn sys_listen(&mut self) -> SysResult; // 24
+
+    /// int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+    /// Accept a coonection from a peer application on a listening stream socket, and optionally
+    /// returns the address of the peer socket.
+    fn sys_accept(&mut self) -> SysResult; // 25
+
+    /// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+    /// Establish a connection with another socket.
+    fn sys_connect(&mut self) -> SysResult; // 26
 }
 
 impl Syscall for Proc {
@@ -383,6 +406,79 @@ impl Syscall for Proc {
     fn sys_close(&mut self) -> SysResult {
         let fd = self.arg_fd(0)?;
         drop(self.data.get_mut().o_files[fd as usize].take());
+        Ok(0)
+    }
+
+    /// 22
+    fn sys_socket(&mut self) -> SysResult {
+        let domain = self.arg_i32(0)? as u16;
+        let typ = self.arg_i32(1)? as u8;
+        let protocol = self.arg_i32(2)? as u8;
+
+        let fd = self
+            .alloc_fd()
+            .or_else(|_| Err("sys_socket: cannot allocate fd"))?;
+
+        let f = File::alloc_socket(domain, typ, protocol)?;
+
+        self.data.get_mut().o_files[fd].replace(f);
+
+        Ok(fd)
+    }
+
+    /// 23
+    fn sys_bind(&mut self) -> SysResult {
+        let fd = self.arg_fd(0)?;
+        let addr = self.arg_raw(1)?;
+        let addr_len = self.arg_raw(2)?;
+        if addr_len != mem::size_of::<SockAddr>() {
+            return Err("addr_len invalid");
+        }
+        let mut sock_addr = SockAddr::uninit();
+        self.data
+            .get_mut()
+            .copy_in(&mut sock_addr as *mut _ as *mut u8, addr, addr_len)?;
+
+        let f = self.data.get_mut().o_files[fd as usize]
+            .as_ref()
+            .ok_or("sys_bind: file not found")?;
+        let soc = f.get_socket().ok_or("sys_bind: file type must be socket")?;
+        soc.bind(&sock_addr)?;
+
+        Ok(0)
+    }
+
+    /// 24
+    fn sys_listen(&mut self) -> SysResult {
+        Ok(0)
+    }
+
+    /// 25
+    fn sys_accept(&mut self) -> SysResult {
+        Ok(0)
+    }
+
+    /// 26
+    fn sys_connect(&mut self) -> SysResult {
+        let fd = self.arg_fd(0)?;
+        let addr = self.arg_raw(1)?;
+        let addr_len = self.arg_raw(2)?;
+        if addr_len != mem::size_of::<SockAddr>() {
+            return Err("addr_len invalid");
+        }
+        let mut sock_addr = SockAddr::uninit();
+        self.data
+            .get_mut()
+            .copy_in(&mut sock_addr as *mut _ as *mut u8, addr, addr_len)?;
+
+        let f = self.data.get_mut().o_files[fd as usize]
+            .as_ref()
+            .ok_or("sys_connect: file not found")?;
+        let soc = f
+            .get_socket()
+            .ok_or("sys_connect: file type must be socket")?;
+        soc.connect(&sock_addr)?;
+
         Ok(0)
     }
 }

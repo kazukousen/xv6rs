@@ -2,7 +2,8 @@ use core::mem;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
-    param::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    e1000::E1000,
+    param::{E1000_IRQ, TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic,
     register::{self, scause::ScauseType},
     spinlock::SpinLock,
@@ -88,6 +89,9 @@ unsafe fn handle_trap(is_user: bool) {
                 }
                 VIRTIO0_IRQ => {
                     DISK.lock().intr();
+                }
+                E1000_IRQ => {
+                    E1000.intr();
                 }
                 _ => {
                     // TODO: handle unexpected interrupt

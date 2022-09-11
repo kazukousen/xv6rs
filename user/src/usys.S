@@ -103,3 +103,18 @@ __uptime:
  li a7, 14
  ecall
  ret
+.global __socket
+__socket:
+ li a7, 22
+ ecall
+ ret
+.global __bind
+__bind:
+ li a7, 23
+ ecall
+ ret
+.global __connect
+__connect:
+ li a7, 26
+ ecall
+ ret

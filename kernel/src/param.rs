@@ -9,6 +9,10 @@ pub const QEMU_TEST0: usize = 0x100000;
 pub const QEMU_EXIT_SUCCESS: u32 = 0x5555;
 pub const QEMU_EXIT_FAIL: u32 = 0x13333; // exit 1
 
+pub const ECAM0: usize = 0x3000_0000;
+pub const E1000_REGS_ADDR: u32 = 0x4000_0000;
+pub const E1000_IRQ: usize = 33;
+
 // the kernel expects there to be RAM
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.

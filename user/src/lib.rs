@@ -3,6 +3,7 @@
 
 pub mod fcntl;
 pub mod fstat;
+pub mod net;
 pub mod printf;
 pub mod syscall;
 
@@ -48,7 +49,7 @@ impl Iterator for Args {
 
         self.pos += 1;
 
-        let s: &[u8] = unsafe { from_raw_parts(*arg, strlen(*arg))};
+        let s: &[u8] = unsafe { from_raw_parts(*arg, strlen(*arg)) };
         let s: &str = unsafe { from_utf8_unchecked(s) };
         Some(s)
     }

@@ -3,8 +3,8 @@ use core::arch::asm;
 use crate::{
     page_table::{PageTable, PteFlag},
     param::{
-        CLINT, CLINT_MAP_SIZE, KERNBASE, PAGESIZE, PHYSTOP, PLIC, PLIC_MAP_SIZE, QEMU_TEST0,
-        TRAMPOLINE, UART0, VIRTIO0,
+        CLINT, CLINT_MAP_SIZE, E1000_REGS_ADDR, ECAM0, KERNBASE, PAGESIZE, PHYSTOP, PLIC,
+        PLIC_MAP_SIZE, TRAMPOLINE, UART0, VIRTIO0,
     },
     register::satp,
 };
@@ -23,6 +23,17 @@ pub unsafe fn init() {
     // virtio registers
     kvm_map(VIRTIO0, VIRTIO0, PAGESIZE, PteFlag::READ | PteFlag::WRITE);
 
+    // PCI-E ECAM (configuration space) for e1000
+    kvm_map(ECAM0, ECAM0, 0x1000_0000, PteFlag::READ | PteFlag::WRITE);
+
+    // PCI-E MMIO for e1000
+    kvm_map(
+        E1000_REGS_ADDR as usize,
+        E1000_REGS_ADDR as usize,
+        0x2_0000,
+        PteFlag::READ | PteFlag::WRITE,
+    );
+
     // CLINT
     kvm_map(CLINT, CLINT, CLINT_MAP_SIZE, PteFlag::READ | PteFlag::WRITE);
 
@@ -31,12 +42,15 @@ pub unsafe fn init() {
 
     // for TEST
     #[cfg(test)]
-    kvm_map(
-        QEMU_TEST0,
-        QEMU_TEST0,
-        PAGESIZE,
-        PteFlag::READ | PteFlag::WRITE,
-    );
+    {
+        use crate::param::QEMU_TEST0;
+        kvm_map(
+            QEMU_TEST0,
+            QEMU_TEST0,
+            PAGESIZE,
+            PteFlag::READ | PteFlag::WRITE,
+        );
+    }
 
     extern "C" {
         fn _etext(); // see kernel.ld linker script

@@ -399,6 +399,9 @@ impl Proc {
             18 => self.sys_unlink(),
             20 => self.sys_mkdir(),
             21 => self.sys_close(),
+            22 => self.sys_socket(),
+            23 => self.sys_bind(),
+            26 => self.sys_connect(),
             _ => {
                 panic!("unknown syscall: {}", num);
             }
