@@ -22,17 +22,17 @@ fn abort() -> ! {
 }
 
 pub struct Args {
-    argc: usize,
-    argv: *const *const u8,
-    count: usize,
+    length: usize,
+    args: &'static [*const u8],
+    pos: usize,
 }
 
 impl Args {
     pub fn new(argc: i32, argv: *const *const u8) -> Self {
         Self {
-            argc: argc as usize,
-            argv,
-            count: 0,
+            length: argc as usize,
+            args: unsafe { from_raw_parts(argv, argc as usize) },
+            pos: 0,
         }
     }
 }
@@ -40,14 +40,13 @@ impl Args {
 impl Iterator for Args {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.count >= self.argc {
+        if self.pos >= self.length {
             return None;
         }
 
-        let args: &[*const u8] = unsafe { from_raw_parts(self.argv, self.argc) };
-        let arg: &*const u8 = unsafe { args.get_unchecked(self.count) };
+        let arg: &*const u8 = unsafe { self.args.get_unchecked(self.pos) };
 
-        self.count += 1;
+        self.pos += 1;
 
         let s: &[u8] = unsafe { from_raw_parts(*arg, strlen(*arg))};
         let s: &str = unsafe { from_utf8_unchecked(s) };
