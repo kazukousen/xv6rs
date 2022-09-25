@@ -21,14 +21,14 @@ fn abort() -> ! {
     panic!("abort");
 }
 
-pub struct Args<'a> {
+pub struct Args {
     argc: usize,
-    argv: &'a [&'a str],
+    argv: *const *const u8,
     count: usize,
 }
 
-impl<'a> Args<'a> {
-    pub fn new(argc: i32, argv: &'a [&'a str]) -> Self {
+impl Args {
+    pub fn new(argc: i32, argv: *const *const u8) -> Self {
         Self {
             argc: argc as usize,
             argv,
@@ -37,20 +37,20 @@ impl<'a> Args<'a> {
     }
 }
 
-impl<'a> Iterator for Args<'a> {
-    type Item = &'a str;
+impl Iterator for Args {
+    type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
         if self.count >= self.argc {
             return None;
         }
 
-        let argv = self.argv as *const [&'a str] as *const *const u8;
-        let args = unsafe { from_raw_parts(argv, self.argc) };
-        let arg = unsafe { args.get_unchecked(self.count) };
+        let args: &[*const u8] = unsafe { from_raw_parts(self.argv, self.argc) };
+        let arg: &*const u8 = unsafe { args.get_unchecked(self.count) };
 
         self.count += 1;
 
-        let s = unsafe { from_utf8_unchecked(from_raw_parts(*arg, strlen(*arg))) };
+        let s: &[u8] = unsafe { from_raw_parts(*arg, strlen(*arg))};
+        let s: &str = unsafe { from_utf8_unchecked(s) };
         Some(s)
     }
 }

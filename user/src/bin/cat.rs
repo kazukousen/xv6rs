@@ -8,7 +8,7 @@ use xv6rs_user::{
 };
 
 #[no_mangle]
-extern "C" fn _start(argc: i32, argv: &[&str]) {
+extern "C" fn _start(argc: i32, argv: *const *const u8) {
     if argc <= 1 {
         println!("argc 0-1");
         sys_exit(0);
