@@ -3,13 +3,14 @@
 //! layer is the layer that archives this uniformity.
 use core::cell::UnsafeCell;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 
 use crate::{
     console,
     cpu::CPU_TABLE,
     fs::{FileStat, Inode, InodeType, INODE_TABLE},
     log::LOG,
+    net::{self, Socket},
     process::PROCESS_TABLE,
     spinlock::SpinLock,
 };
@@ -108,6 +109,18 @@ impl File {
         (rf, wf)
     }
 
+    pub fn alloc_socket(domain: u16, typ: u8, protocol: u8) -> Result<Arc<Self>, &'static str> {
+        let s = net::Socket::new(typ)?;
+
+        let f = Self {
+            readable: true,
+            writable: true,
+            inner: FileInner::Socket(Box::new(s)),
+        };
+
+        Ok(Arc::new(f))
+    }
+
     pub fn write(&self, addr: usize, n: usize) -> Result<usize, &'static str> {
         if !self.writable {
             return Err("write: not writable");
@@ -156,7 +169,8 @@ impl File {
                 drop(guard);
                 Ok(i)
             }
-            _ => panic!("unimplemented yet"),
+            FileInner::Socket(ref s) => s.write(addr, n),
+            _ => panic!("unimplesented yet"),
         }
     }
 
@@ -212,6 +226,7 @@ impl File {
                 drop(guard);
                 Ok(0)
             }
+            FileInner::Socket(ref s) => s.read(addr, n),
         }
     }
 
@@ -232,6 +247,14 @@ impl File {
                 let guard = f.lock();
                 drop(guard);
             }
+            FileInner::Socket(ref s) => {}
+        }
+    }
+
+    pub fn get_socket(&self) -> Option<&Socket> {
+        match &self.inner {
+            FileInner::Socket(s) => Some(s),
+            _ => None,
         }
     }
 }
@@ -265,6 +288,9 @@ impl Drop for File {
                     drop(guard);
                 }
             }
+            FileInner::Socket(ref s) => {
+                drop(s);
+            }
         }
     }
 }
@@ -273,6 +299,7 @@ enum FileInner {
     Inode(FileInode),
     Device(FileDevice),
     Pipe(Arc<SpinLock<FilePipe>>),
+    Socket(Box<Socket>),
 }
 
 struct FileInode {

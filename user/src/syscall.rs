@@ -1,4 +1,5 @@
-use crate::fstat::FileStat;
+use crate::{fstat::FileStat, net::SockAddr};
+use core::mem;
 
 extern "C" {
     /// int fork()
@@ -23,6 +24,12 @@ extern "C" {
     fn __mknod(addr: *const u8, major: i32, minor: i32) -> i32;
     /// int close(int fd)
     fn __close(fd: i32);
+    /// int socket(int domain, int type, int protocol)
+    fn __socket(domain: i32, typ: i32, protocol: i32) -> i32; // 22
+    /// int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+    fn __bind(sockfd: i32, addr: *const u8, addr_len: usize) -> i32;
+    /// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+    fn __connect(sockfd: i32, addr: *const u8, addr_len: usize) -> i32;
 }
 
 pub fn sys_fork() -> i32 {
@@ -67,4 +74,28 @@ pub fn sys_mknod(path: &str, major: i32, minor: i32) -> i32 {
 
 pub fn sys_close(fd: i32) {
     unsafe { __close(fd) }
+}
+
+pub fn sys_socket(domain: i32, typ: i32, protocol: i32) -> i32 {
+    unsafe { __socket(domain, typ, protocol) }
+}
+
+pub fn sys_bind(sockfd: i32, sock_addr: &SockAddr) -> i32 {
+    unsafe {
+        __bind(
+            sockfd,
+            sock_addr as *const _ as *const u8,
+            mem::size_of::<SockAddr>(),
+        )
+    }
+}
+
+pub fn sys_connect(sockfd: i32, sock_addr: &SockAddr) -> i32 {
+    unsafe {
+        __connect(
+            sockfd,
+            sock_addr as *const _ as *const u8,
+            mem::size_of::<SockAddr>(),
+        )
+    }
 }

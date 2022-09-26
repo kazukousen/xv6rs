@@ -5,13 +5,24 @@ use crate::{cpu, param};
 pub unsafe fn init() {
     write(param::UART0_IRQ * 4, 1);
     write(param::VIRTIO0_IRQ * 4, 1);
+
+    // TODO: ?
+    // PCIE IRQs are 32 to 35
+    for irq in 1..0x35 {
+        write(irq * 4, 1);
+    }
 }
 
 pub unsafe fn init_hart(hart: usize) {
+    // set uart's enable bit for this hart's S-mode.
     write(
         SENABLE + SENABLE_HART * hart,
         (1 << param::UART0_IRQ) | (1 << param::VIRTIO0_IRQ),
     );
+    // hack to get at next 32 IRQs for e1000
+    write(SENABLE + SENABLE_HART * hart + 4, 0xffffffff);
+
+    // set the hart's S-mode priority threshold to 0.
     write(SPRIORITY + SPRIORITY_HART * hart, 0);
 }
 

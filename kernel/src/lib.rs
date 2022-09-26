@@ -21,6 +21,7 @@ use cpu::CPU_TABLE;
 use crate::{
     bio::BCACHE,
     cpu::CpuTable,
+    e1000::E1000,
     param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
     process::PROCESS_TABLE,
     virtio::DISK,
@@ -30,13 +31,17 @@ mod bio;
 mod bmap;
 mod console;
 mod cpu;
+mod e1000;
 mod file;
 mod fs;
 mod kalloc;
 mod kvm;
 mod log;
+mod mbuf;
+mod net;
 mod page_table;
 mod param;
+mod pci;
 mod plic;
 pub mod printf;
 mod proc;
@@ -67,6 +72,8 @@ pub unsafe fn bootstrap() -> ! {
         plic::init_hart(cpu_id); // ask PLIC for device interrupts
         BCACHE.init(); // buffer cache
         DISK.lock().init(); // emulated hard disk
+        pci::init(); // pci
+
         PROCESS_TABLE.user_init(); // first user process
         STARTED.store(true, Ordering::SeqCst);
     } else {

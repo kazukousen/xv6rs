@@ -28,6 +28,10 @@ fetch:
 .PHONY: build
 build: $(KERNEL_TARGET_BIN) $(USER_TARGET_LIB)
 
+
+FWDPORT = $(shell expr `id -u` % 5000 + 25999)
+SERVERPORT = $(shell expr `id -u` % 5000 + 25099)
+
 QEMU ?= qemu-system-riscv64
 QEMUOPTS = -M virt \
     -bios none \
@@ -36,11 +40,14 @@ QEMUOPTS = -M virt \
     -smp 3
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS += -netdev user,id=net0,hostfwd=udp::$(FWDPORT)-:2000 -object filter-dump,id=net0,netdev=net0,file=packets.pcap
+QEMUOPTS += -device e1000,netdev=net0,bus=pcie.0
 
 .PHONY: qemu
 qemu: build fs.img
-	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_TARGET_BIN)
+	E1000_DEBUG=tx,txerr,rx,rxerr,general $(QEMU) $(QEMUOPTS) -kernel $(KERNEL_TARGET_BIN)
 
+# RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
 .PHONY: test
 test: fetch fs.img
 	$(eval TEST_LIB := $(shell RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_TEST) -p xv6rs-kernel --lib --no-run --message-format=json \
@@ -66,6 +73,8 @@ UPROGS=\
 	user/_zombie\
 	$(TARGET)/helloworld\
 	$(TARGET)/exit42\
+	$(TARGET)/ping\
+	$(TARGET)/udp-server\
 
 $(UPROGS): $(USER_TARGET_LIB)
 
@@ -79,3 +88,9 @@ fs.img: $(MKFS_TARGET_BIN) $(UPROGS) README.md
 clean:
 	rm -rf target/
 	rm -f fs.img
+
+py-udp-server:
+	python3 tools/udp-server.py $(SERVERPORT)
+
+py-udp-ping:
+	python3 tools/udp-ping.py $(FWDPORT)

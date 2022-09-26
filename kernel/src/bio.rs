@@ -52,6 +52,7 @@ impl BCache {
         self.lru.lock().brelse(index);
     }
 
+    /// returns the locked buffer.
     fn bget(&self, dev: u32, blockno: u32) -> BufGuard {
         let lru = self.lru.lock();
 
@@ -123,6 +124,7 @@ impl<'a> Drop for BufGuard<'a> {
 }
 
 struct Buf {
+    // has data been read from disk?
     valid: AtomicBool,
     data: SleepLock<BufData>,
 }
