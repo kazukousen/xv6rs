@@ -247,8 +247,11 @@ impl PageTable {
 
     pub fn unmap_pages(
         &mut self,
+        // must be alined
         va_start: usize,
+        // the number of page what to unmap
         n: usize,
+        // whether to free the physical pages or not
         freeing: bool,
     ) -> Result<(), &'static str> {
         if va_start % PAGESIZE != 0 {
@@ -433,13 +436,13 @@ impl Drop for PageTable {
 }
 
 #[inline]
-fn align_down(addr: usize, align: usize) -> usize {
+pub fn align_down(addr: usize, align: usize) -> usize {
     assert!(align.is_power_of_two());
     addr & !(align - 1)
 }
 
 #[inline]
-fn align_up(addr: usize, align: usize) -> usize {
+pub fn align_up(addr: usize, align: usize) -> usize {
     assert!(align.is_power_of_two());
     (addr + align - 1) & !(align - 1)
 }

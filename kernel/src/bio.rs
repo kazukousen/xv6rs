@@ -48,7 +48,7 @@ impl BCache {
         buf
     }
 
-    pub fn brelse(&self, index: usize) {
+    fn brelse(&self, index: usize) {
         self.lru.lock().brelse(index);
     }
 

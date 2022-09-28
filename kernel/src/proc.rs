@@ -2,13 +2,14 @@ use core::{cell::UnsafeCell, mem, ptr};
 
 use alloc::{boxed::Box, sync::Arc};
 use array_macro::array;
+use bitflags::bitflags;
 
 use crate::{
     cpu::{CpuTable, CPU_TABLE},
     file::File,
     fs::{self, Inode, INODE_TABLE},
-    page_table::{Page, PageTable, SinglePage},
-    param::{KSTACK_SIZE, NOFILE, PAGESIZE, ROOTDEV},
+    page_table::{align_down, Page, PageTable, PteFlag, SinglePage},
+    param::{KSTACK_SIZE, MAXVA, NOFILE, PAGESIZE, ROOTDEV},
     println,
     process::PROCESS_TABLE,
     register::satp,
@@ -160,6 +161,27 @@ pub struct ProcData {
     context: Context,
     pub cwd: Option<Inode>,
     pub o_files: [Option<Arc<File>>; NOFILE],
+    vm_area: [Option<VMA>; 100],
+    cur_max: usize,
+}
+
+/// Each VMA has a range of virtual addresses that shares the same permissions and is backed by the
+/// same resource (e.g. a file or anonymous memory).
+struct VMA {
+    addr_start: usize,
+    addr_end: usize,
+    size: usize,
+    prot: PteFlag,
+    flags: MapFlag,
+    fd: i32,
+}
+
+bitflags! {
+    pub struct MapFlag: usize {
+        const SHARED = 1 << 0;
+        const PRIVATE = 1 << 1;
+        const ANONYMOUNS = 1 << 2;
+    }
 }
 
 impl ProcData {
@@ -172,6 +194,14 @@ impl ProcData {
             context: Context::new(),
             cwd: None,
             o_files: array![_ => None; NOFILE],
+            vm_area: array![_ => None; 100],
+            // the VMA list is allocated from top to bottom.
+            // the initial max virtual address of the VMA is 2 pages below the MAXVA.
+            // the reason behind is first 2 pages are trampoline and trapframe.
+            //
+            // the cur_max is adjusted after we create a new VMA. so next allocation's end address
+            // can be set to cur_max.
+            cur_max: MAXVA - 2 * PAGESIZE,
         }
     }
 
@@ -249,6 +279,96 @@ impl ProcData {
             .as_ref()
             .unwrap()
             .copy_out(dstva, src, count)
+    }
+
+    pub fn unmmap(&mut self, addr: usize, size: usize) -> Result<(), &'static str> {
+        // find which VMA owns the VA.
+        let mut vm = self
+            .vm_area
+            .iter_mut()
+            .find(|vm| {
+                if vm.is_none() {
+                    return false;
+                }
+                let vm = vm.as_ref().unwrap();
+                return vm.addr_start <= addr && addr <= vm.addr_end;
+            })
+            .ok_or("lazy_mmap: the addr is not lived in VMA")?
+            .as_mut();
+
+        let addr_head = align_down(addr, PAGESIZE);
+        let pgt = self.page_table.as_mut().unwrap();
+        for va in (addr_head..=align_down(addr + size, PAGESIZE)).step_by(PAGESIZE) {
+            if let Ok(_) = pgt.walk_addr(va) {
+                pgt.unmap_pages(va, 1, true)?;
+            }
+        }
+
+        self.cur_max = vm.as_ref().unwrap().addr_end;
+        vm.take();
+
+        Ok(())
+    }
+
+    /// The reason to be lazy is to ensure that mmap-ing a large file is fast, and tha mmap-ing a
+    /// file larger than physical memory is possible.
+    pub fn lazy_mmap(&mut self, fault_addr: usize) -> Result<(), &'static str> {
+        // find which VMA owns the VA.
+        let vm = self
+            .vm_area
+            .iter()
+            .find(|vm| {
+                if vm.is_none() {
+                    return false;
+                }
+                let vm = vm.as_ref().unwrap();
+                return vm.addr_start <= fault_addr && fault_addr <= vm.addr_end;
+            })
+            .ok_or("lazy_mmap: the addr is not lived in VMA")?
+            .as_ref()
+            .unwrap();
+
+        let fault_addr_head = align_down(fault_addr, PAGESIZE);
+
+        // map the page into the user address space, by installing to user page table.
+        let pgt = self.page_table.as_mut().unwrap();
+        // TODO: the physical page can be shared with mappings in other processes.
+        // we will need reference counts on physical pages.
+        // Right now, can only allocate a new physical page for each process.
+        let pa = unsafe {
+            SinglePage::alloc_into_raw()
+                .expect("lazy_mmap: unable to allocate a page of physical memory")
+        } as usize;
+        pgt.map_pages(
+            fault_addr_head,
+            pa,
+            PAGESIZE,
+            //  vm.prot | PteFlag::USER,
+            PteFlag::READ | PteFlag::WRITE | PteFlag::EXEC | PteFlag::USER,
+        )?;
+
+        if vm.fd < 0 && (MapFlag::ANONYMOUNS.bits() & vm.flags.bits()) > 0 {
+            // anonymous mapping
+
+            return Ok(());
+        } else if vm.fd < 0 {
+        }
+
+        // TODO: even if the data is in kernel memory in the buffer cache, the current solution is
+        // allocating a new physical page for each page read from mmap-ed file.
+        // So try to modify this implementation to use that kernel memory, instead of allocating a
+        // new page. This requires that file blocks be the same size as pages (set BSIZE to 4096).
+        // and need to pin mmap-ed blocks into the buffer cache. We will need worry about reference
+        // counts.
+        //
+        //
+        // read 4096 bytes from the file to the page.
+        let f = self.o_files[vm.fd as usize].as_ref().unwrap().clone();
+        let offset = fault_addr_head - vm.addr_start;
+        f.seek(offset);
+        f.read(fault_addr_head, PAGESIZE)?;
+
+        Ok(())
     }
 }
 
@@ -361,14 +481,29 @@ impl Proc {
             unsafe { SinglePage::free_from_raw(pdata.trapframe as *mut _) };
             pdata.trapframe = ptr::null_mut();
         }
+
         if pdata.page_table.is_some() {
-            pdata
-                .page_table
-                .as_mut()
-                .unwrap()
-                .unmap_user_page_table(pdata.sz);
-            drop(pdata.page_table.take());
+            let pgt = pdata.page_table.as_mut().unwrap();
+
+            // the first, unmap trampoline, trapframe and the user code.
+            pgt.unmap_user_page_table(pdata.sz);
+
+            // the second, unmap all mmap-ed region.
+            for vm in pdata.vm_area.iter_mut() {
+                if vm.is_some() {
+                    let vm = vm.as_ref().unwrap();
+                    for va in (vm.addr_start..vm.addr_end).step_by(PAGESIZE) {
+                        if let Ok(_) = pgt.walk_addr(va) {
+                            pgt.unmap_pages(va, 1, true)
+                                .expect("cannot unmap in freeing");
+                        }
+                    }
+                }
+                vm.take();
+            }
         }
+        drop(pdata.page_table.take());
+        pdata.cur_max = MAXVA - 2 * PAGESIZE;
         pdata.sz = 0;
         inner.state = ProcState::Unused;
         inner.chan = 0;
@@ -405,6 +540,7 @@ impl Proc {
             22 => self.sys_socket(),
             23 => self.sys_bind(),
             26 => self.sys_connect(),
+            27 => self.sys_mmap(),
             _ => {
                 panic!("unknown syscall: {}", num);
             }

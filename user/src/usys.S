@@ -118,3 +118,8 @@ __connect:
  li a7, 26
  ecall
  ret
+.global __mmap
+__mmap:
+ li a7, 27
+ ecall
+ ret

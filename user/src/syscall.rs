@@ -43,7 +43,7 @@ extern "C" {
     fn __mkdir(addr: *const u8) -> i32;
     /// 21
     /// int close(int fd)
-    fn __close(fd: i32);
+    fn __close(fd: i32) -> i32;
     /// 22
     /// int socket(int domain, int type, int protocol)
     fn __socket(domain: i32, typ: i32, protocol: i32) -> i32; // 22
@@ -53,6 +53,16 @@ extern "C" {
     /// 26
     /// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     fn __connect(sockfd: i32, addr: *const u8, addr_len: usize) -> i32;
+    /// 27
+    /// void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
+    fn __mmap(
+        addr: *const u8,
+        size: usize,
+        prot: usize,
+        flags: usize,
+        fd: i32,
+        offset: usize,
+    ) -> usize;
 }
 
 // 1
@@ -122,7 +132,7 @@ pub fn sys_mkdir(path: &str) -> i32 {
 }
 
 // 21
-pub fn sys_close(fd: i32) {
+pub fn sys_close(fd: i32) -> i32 {
     unsafe { __close(fd) }
 }
 
@@ -151,4 +161,16 @@ pub fn sys_connect(sockfd: i32, sock_addr: &SockAddr) -> i32 {
             mem::size_of::<SockAddr>(),
         )
     }
+}
+
+// 27
+pub fn sys_mmap(
+    addr: *const u8,
+    size: usize,
+    prot: usize,
+    flags: usize,
+    fd: i32,
+    offset: usize,
+) -> usize {
+    unsafe { __mmap(addr, size, prot, flags, fd, offset) }
 }
