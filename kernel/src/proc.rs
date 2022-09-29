@@ -320,7 +320,7 @@ impl Proc {
             .uvm_copy(cpgt, sz)
             .is_err()
         {
-            Self::free(cdata, &mut cguard);
+            Self::free(cdata, cguard);
             return Err("fork: cannot uvm_copy");
         };
         cdata.sz = sz;
@@ -353,7 +353,10 @@ impl Proc {
         Ok(pid)
     }
 
-    pub fn free(pdata: &mut ProcData, inner: &mut SpinLockGuard<ProcInner>) {
+    /// free the page of trapframe and user code, clear the process's inner state.
+    ///
+    /// free() must be called inside the process's critical section.
+    pub fn free(pdata: &mut ProcData, mut inner: SpinLockGuard<ProcInner>) {
         if !pdata.trapframe.is_null() {
             unsafe { SinglePage::free_from_raw(pdata.trapframe as *mut _) };
             pdata.trapframe = ptr::null_mut();
@@ -579,7 +582,8 @@ mod tests {
         let pdata = p.data.get_mut();
         let pgt = pdata.page_table.as_mut().unwrap();
 
-        // remap
+        // clear the first page in the pagetable and then map new code which exits with 42 code
+        // it will be executed as a child process by forking.
         pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
         pgt.uvm_init(&EXIT_42_CODE)
             .expect("cannot map the test code into the page");

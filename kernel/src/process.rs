@@ -122,6 +122,7 @@ impl ProcessTable {
         loop {
             let mut have_kids = false;
             for i in 0..NPROC {
+                // is this child of p?
                 if parents[i].is_none() || parents[i].unwrap() != p.index {
                     continue;
                 }
@@ -138,6 +139,7 @@ impl ProcessTable {
                 }
 
                 if addr != 0 {
+                    // copy exit status into `addr`
                     if let Err(msg) = p.data.get_mut().copy_out(
                         addr,
                         &cguard.exit_status as *const _ as *const u8,
@@ -148,13 +150,13 @@ impl ProcessTable {
                         return Err(msg);
                     }
                 }
+
                 // free the child proc
-                let child_pid = cguard.pid;
                 let cdata = child.data.get_mut();
-                Proc::free(cdata, &mut cguard);
+                let child_pid = cguard.pid;
+                Proc::free(cdata, cguard);
                 parents[child.index].take();
-                drop(cguard);
-                drop(parents);
+
                 return Ok(child_pid);
             }
 
