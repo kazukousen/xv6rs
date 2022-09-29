@@ -1,6 +1,6 @@
 # Context switch
 #
-#   fn swtch(old: *const Context, new: *mut Context);
+#   fn swtch(old: *mut Context, new: *const Context);
 # 
 # Save current registers in old. Load from new.	
 # swtch saves the `ra` register, which holds the return address from which swtch was called,

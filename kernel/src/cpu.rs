@@ -30,7 +30,7 @@ impl CpuTable {
 
     pub unsafe fn scheduler(&mut self) -> ! {
         extern "C" {
-            fn swtch(old: *const Context, new: *mut Context); // in swtch.S
+            fn swtch(old: *mut Context, new: *const Context); // in swtch.S
         }
         let cpu = self.my_cpu_mut();
 
@@ -45,7 +45,7 @@ impl CpuTable {
                 guard.state = ProcState::Running;
 
                 // Save the scheduler context as soon as it is switched to the process's context.
-                swtch(&cpu.scheduler as *const _, p.data.get_mut().get_context());
+                swtch(&mut cpu.scheduler, p.data.get_mut().get_context());
 
                 // swtch called by `sched()` returns on the scheduler's stack as through
                 // scheduler's switch had returned the scheduler continues its loop, finds a
@@ -114,7 +114,7 @@ impl Cpu {
     pub fn sched<'a>(
         &mut self,
         guard: SpinLockGuard<'a, ProcInner>,
-        ctx: *const Context,
+        ctx: &mut Context,
     ) -> SpinLockGuard<'a, ProcInner> {
         if self.noff != 1 {
             panic!("sched: multi locks");
@@ -129,10 +129,10 @@ impl Cpu {
         let intena = self.intena;
 
         extern "C" {
-            fn swtch(old: *const Context, new: *mut Context); // in swtch.S
+            fn swtch(old: *mut Context, new: *const Context); // in swtch.S
         }
         unsafe {
-            swtch(ctx, &mut self.scheduler as *mut _);
+            swtch(ctx, &self.scheduler);
         }
 
         self.intena = intena;

@@ -214,8 +214,8 @@ impl ProcData {
         Ok(())
     }
 
-    pub fn get_context(&mut self) -> *mut Context {
-        &mut self.context as *mut _
+    pub fn get_context(&mut self) -> &mut Context {
+        &mut self.context
     }
 
     #[inline]
@@ -267,10 +267,10 @@ impl Proc {
         }
     }
 
-    pub unsafe fn yield_process(&self) {
+    pub unsafe fn yield_process(&mut self) {
         let mut guard = self.inner.lock();
         if guard.state == ProcState::Running {
-            let ctx = &(*self.data.get()).context;
+            let ctx = &mut self.data.get_mut().context;
             guard.state = ProcState::Runnable;
             guard = CPU_TABLE.my_cpu_mut().sched(guard, ctx);
         }
@@ -279,7 +279,7 @@ impl Proc {
 
     /// Atomically release lock and sleep on chan.
     /// The passed-in guard must not be the proc's guard to avoid deadlock.
-    pub fn sleep<'a, T>(&self, chan: usize, lk: SpinLockGuard<'a, T>) -> SpinLockGuard<'a, T> {
+    pub fn sleep<'a, T>(&mut self, chan: usize, lk: SpinLockGuard<'a, T>) -> SpinLockGuard<'a, T> {
         let mut guard = self.inner.lock();
 
         // Go to sleep
@@ -291,7 +291,7 @@ impl Proc {
 
         unsafe {
             let cpu = CPU_TABLE.my_cpu_mut();
-            guard = cpu.sched(guard, &(*self.data.get()).context);
+            guard = cpu.sched(guard, &mut self.data.get_mut().context);
         }
 
         // Tidy up.
