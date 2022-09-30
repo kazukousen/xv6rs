@@ -10,8 +10,6 @@ use xv6rs_kernel::{println, PANICKED};
 
 #[no_mangle]
 unsafe fn main() -> ! {
-    #[cfg(test)]
-    test_main();
     xv6rs_kernel::bootstrap();
 }
 

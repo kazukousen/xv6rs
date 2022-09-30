@@ -16,7 +16,7 @@ MKFS_TARGET_BIN = $(MKFS_TARGET)/xv6rs-mkfs
 USER_TARGET_LIB = $(TARGET)/xv6rs-user
 
 $(KERNEL_TARGET_BIN): fetch
-	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel
+	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel --bin xv6rs-kernel
 
 $(USER_TARGET_LIB): fetch
 	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
