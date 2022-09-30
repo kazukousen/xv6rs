@@ -140,15 +140,11 @@ impl ProcessTable {
 
                 if addr != 0 {
                     // copy exit status into `addr`
-                    if let Err(msg) = p.data.get_mut().copy_out(
+                    p.data.get_mut().copy_out(
                         addr,
                         &cguard.exit_status as *const _ as *const u8,
                         mem::size_of::<i32>(),
-                    ) {
-                        drop(cguard);
-                        drop(parents);
-                        return Err(msg);
-                    }
+                    )?;
                 }
 
                 // take pid for ret
