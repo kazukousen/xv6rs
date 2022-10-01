@@ -9,9 +9,6 @@ use xv6rs_user::{entry_point, print, println, Args};
 entry_point!(main);
 
 fn main(args: &mut Args) -> Result<(), &'static str> {
-    #[cfg(test)]
-    crate::test_main();
-
     let c = args.skip(1).next().ok_or_else(|| "missing args")?;
     print!("{}", c);
 
