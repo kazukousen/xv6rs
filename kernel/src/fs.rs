@@ -971,7 +971,6 @@ mod tests {
         f[2] = b'i';
         f[3] = b't';
         let (init_inode, _) = idata.dirlookup(&f).expect("'init' not found in '/'");
-        assert_eq!(7, init_inode.inum);
         drop(init_inode);
         drop(idata);
     }
@@ -981,7 +980,6 @@ mod tests {
         let inode = INODE_TABLE
             .namei(&[b'/', b'i', b'n', b'i', b't', 0])
             .expect("'/init' not found");
-        assert_eq!(7, inode.inum);
     }
 
     #[test_case]
@@ -1014,7 +1012,7 @@ mod tests {
         let mut idata = cwd.ilock();
         let mut de = DirEnt::empty();
         let offset = idata.find_available_dirent_offset(&mut de).expect("dirent");
-        assert_eq!(992, offset);
+        assert_eq!(4064, offset);
         drop(idata);
     }
 }
