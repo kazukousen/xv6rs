@@ -24,8 +24,8 @@ extern "C" fn _start() {
             sys_exit(1);
         }
         if pid == 0 {
-            let argv = ["sh", "\0"];
-            sys_exec("sh\0", &argv);
+            let cmd = "sh\0";
+            sys_exec(cmd);
             println!("init: exec failed");
             sys_exit(1);
         }
