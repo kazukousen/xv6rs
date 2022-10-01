@@ -9,8 +9,8 @@ use std::{
 };
 
 const FSSIZE: usize = 200000; // size of file system in blocks
-const DIRSIZ: usize = 14;
-const BSIZE: usize = 1024; // size of disk block
+const DIRSIZ: usize = 30;
+const BSIZE: usize = 4096; // size of disk block
 const NDIRECT: usize = 11;
 const NINDIRECT: usize = BSIZE / mem::size_of::<u32>();
 const NDINDIRECT: usize = NINDIRECT;

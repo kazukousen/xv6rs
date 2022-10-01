@@ -50,19 +50,18 @@ qemu: build fs.img
 # RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
 .PHONY: test
 test: fetch fs.img
-	$(eval TEST_LIB := $(shell RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_TEST) -p xv6rs-kernel --lib --no-run --message-format=json \
-						| jq -r 'select(.profile.test == true) | .filenames[0]'))
-	$(QEMU) $(QEMUOPTS) -kernel $(TEST_LIB)
+	@echo "building the test harness (rustc --test) artifact of kernel/lib.rs ..."
+	$(eval KERNEL_LIB_TEST := $(shell RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_TEST) -p xv6rs-kernel --lib --no-run --message-format=json \
+						| jq -r 'select(.profile.test == true) | .executable'))
+	@echo "done $(KERNEL_LIB_TEST)"
+	@echo "executing the artifact on qemu ..."
+	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_LIB_TEST)
 
 UPROGS=\
-	$(TARGET)/cat\
-	$(TARGET)/echo\
 	user/_forktest\
 	user/_grep\
-	$(TARGET)/init\
 	user/_kill\
 	user/_ln\
-	$(TARGET)/ls\
 	user/_mkdir\
 	user/_rm\
 	user/_sh\
@@ -71,10 +70,10 @@ UPROGS=\
 	user/_grind\
 	user/_wc\
 	user/_zombie\
-	$(TARGET)/helloworld\
-	$(TARGET)/exit42\
-	$(TARGET)/ping\
-	$(TARGET)/udp-server\
+	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user --message-format=json \
+						| jq -r 'select(.message == null) | select(.target.kind[0] == "bin") | .executable')\
+	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
+						| jq -r 'select(.profile.test == true) | .executable')\
 
 $(UPROGS): $(USER_TARGET_LIB)
 

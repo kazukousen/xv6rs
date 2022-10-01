@@ -18,7 +18,7 @@ use core::{
 };
 
 pub const NBUF: usize = MAXOPBLOCKS * 3; // size of disk block cache
-pub const BSIZE: usize = 1024; // size of disk block
+pub const BSIZE: usize = 4096; // size of disk block
 pub static BCACHE: BCache = BCache::new();
 
 pub struct BCache {

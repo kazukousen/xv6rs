@@ -1,5 +1,8 @@
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(xv6rs_user::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 use core::str::from_utf8_unchecked;
 
@@ -12,6 +15,9 @@ use xv6rs_user::{
 
 #[no_mangle]
 extern "C" fn _start(argc: i32, argv: *const *const u8) {
+    #[cfg(test)]
+    crate::test_main();
+
     if argc <= 1 {
         println!("argc 0-1");
         sys_exit(0);

@@ -57,6 +57,6 @@ mod tests {
         assert_eq!(FSMAGIC, unsafe { SB.magic });
         assert_eq!(200000, unsafe { SB.size });
         assert_eq!(32, unsafe { SB.inodestart });
-        assert_eq!(45, unsafe { SB.bmapstart });
+        assert_eq!(36, unsafe { SB.bmapstart });
     }
 }

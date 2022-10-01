@@ -61,7 +61,7 @@ pub unsafe fn init(dev: u32) {
 const NINODE: usize = 50;
 // number of inodes in a single block
 pub const IPB: usize = BSIZE / mem::size_of::<DiskInode>();
-const DIRSIZ: usize = 14;
+const DIRSIZ: usize = 30;
 const ROOTINO: u32 = 1;
 
 #[inline]
@@ -965,10 +965,12 @@ mod tests {
     fn lookup_root_init_by_dirlookup() {
         let inode = INODE_TABLE.iget(ROOTDEV, ROOTINO);
         let mut idata = inode.ilock();
-        let (init_inode, _) = idata
-            .dirlookup(&[b'i', b'n', b'i', b't', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-            .expect("'init' not found in '/'");
-        assert_eq!(7, init_inode.inum);
+        let mut f = [0u8; DIRSIZ];
+        f[0] = b'i';
+        f[1] = b'n';
+        f[2] = b'i';
+        f[3] = b't';
+        let (init_inode, _) = idata.dirlookup(&f).expect("'init' not found in '/'");
         drop(init_inode);
         drop(idata);
     }
@@ -978,7 +980,6 @@ mod tests {
         let inode = INODE_TABLE
             .namei(&[b'/', b'i', b'n', b'i', b't', 0])
             .expect("'/init' not found");
-        assert_eq!(7, inode.inum);
     }
 
     #[test_case]
@@ -1011,7 +1012,7 @@ mod tests {
         let mut idata = cwd.ilock();
         let mut de = DirEnt::empty();
         let offset = idata.find_available_dirent_offset(&mut de).expect("dirent");
-        assert_eq!(1008, offset);
+        assert_eq!(4064, offset);
         drop(idata);
     }
 }
