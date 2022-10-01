@@ -5,40 +5,32 @@
 #![reexport_test_harness_main = "test_main"]
 
 use xv6rs_user::{
-    println,
-    syscall::{sys_close, sys_exit, sys_open, sys_read, sys_write},
+    entry_point, println,
+    syscall::{sys_close, sys_open, sys_read, sys_write},
     Args,
 };
 
-#[no_mangle]
-extern "C" fn _start(argc: i32, argv: *const *const u8) {
-    #[cfg(test)]
-    crate::test_main();
-
-    if argc <= 1 {
-        println!("argc 0-1");
-        sys_exit(0);
-    }
-    for arg in Args::new(argc, argv).skip(1) {
+entry_point!(main);
+fn main(args: &mut Args) -> Result<i32, &'static str> {
+    for arg in args.skip(1) {
         let fd = sys_open(arg, 0);
-        cat(fd);
+        cat(fd)?;
         sys_close(fd);
     }
-    sys_exit(0);
+    Ok(0)
 }
 
-fn cat(fd: i32) {
+fn cat(fd: i32) -> Result<(), &'static str> {
     let mut buf = [0u8; 512];
     let mut n = sys_read(fd, &mut buf);
     while n > 0 {
         if sys_write(1, &buf) != n {
-            println!("cat: write error");
-            sys_exit(1);
+            return Err("write error");
         }
         n = sys_read(fd, &mut buf);
     }
     if n < 0 {
-        println!("cat: read error");
-        sys_exit(1);
+        return Err("read error");
     }
+    Ok(())
 }

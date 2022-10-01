@@ -4,14 +4,11 @@
 #![test_runner(xv6rs_user::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use xv6rs_user::syscall::sys_exit;
+use xv6rs_user::{entry_point, Args};
 
-#[no_mangle]
-pub unsafe extern "C" fn _start() -> ! {
-    #[cfg(test)]
-    crate::test_main();
-
-    sys_exit(42);
+entry_point!(main);
+fn main(_: &mut Args) -> Result<i32, &'static str> {
+    Ok(42)
 }
 
 #[cfg(test)]

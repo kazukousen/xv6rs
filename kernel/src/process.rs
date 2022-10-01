@@ -183,7 +183,7 @@ impl ProcessTable {
         // close all open files
         let pdata = p.data.get_mut();
         for i in 0..pdata.o_files.len() {
-            pdata.o_files[i].take();
+            drop(pdata.o_files[i].take());
         }
 
         LOG.begin_op();

@@ -7,45 +7,48 @@
 use core::{mem, ptr, slice, str::from_utf8_unchecked};
 
 use xv6rs_user::{
+    entry_point,
     fstat::{stat, DirEnt, FileStat, InodeType, DIRSIZ},
     println, strlen,
-    syscall::{sys_close, sys_exit, sys_fstat, sys_open, sys_read},
+    syscall::{sys_close, sys_fstat, sys_open, sys_read},
     Args,
 };
 
-#[no_mangle]
-extern "C" fn _start(argc: i32, argv: *const *const u8) {
-    #[cfg(test)]
-    crate::test_main();
+entry_point!(main);
 
-    if argc < 2 {
-        ls(".\0");
-        sys_exit(0);
+fn main(args: &mut Args) -> Result<i32, &'static str> {
+    match args.skip(1).next() {
+        Some(arg) => {
+            ls(arg)?;
+        }
+        None => {
+            ls(".\0")?;
+            return Ok(0);
+        }
     }
-    for arg in Args::new(argc, argv).skip(1) {
-        ls(arg);
+
+    for arg in args {
+        ls(arg)?;
     }
-    sys_exit(0);
+
+    Ok(0)
 }
 
-fn ls(path: &str) {
+fn ls(path: &str) -> Result<(), &'static str> {
     let fd = sys_open(&path, 0);
     if fd < 0 {
-        println!("ls: open error");
-        sys_exit(1);
+        return Err("open error");
     }
 
     let mut st = FileStat::uninit();
     if sys_fstat(fd, &mut st) < 0 {
-        println!("ls: fstat error");
-        sys_exit(1);
+        return Err("fstat error");
     }
 
     match st.typ {
         InodeType::Directory => {
             if path.len() > DIRSIZ {
-                println!("ls: path too long");
-                sys_exit(1);
+                return Err("path too long");
             }
 
             let mut buf = [0u8; 512]; // sufficiently larger than the the max length of dirent name
@@ -104,4 +107,6 @@ fn ls(path: &str) {
     }
 
     sys_close(fd);
+
+    Ok(())
 }
