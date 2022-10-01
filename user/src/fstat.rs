@@ -30,7 +30,7 @@ impl FileStat {
     }
 }
 
-pub const DIRSIZ: usize = 14;
+pub const DIRSIZ: usize = 30;
 
 #[repr(C)]
 pub struct DirEnt {

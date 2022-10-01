@@ -61,7 +61,7 @@ pub unsafe fn init(dev: u32) {
 const NINODE: usize = 50;
 // number of inodes in a single block
 pub const IPB: usize = BSIZE / mem::size_of::<DiskInode>();
-const DIRSIZ: usize = 14;
+const DIRSIZ: usize = 30;
 const ROOTINO: u32 = 1;
 
 #[inline]
