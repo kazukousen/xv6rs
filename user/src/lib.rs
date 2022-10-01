@@ -73,6 +73,31 @@ pub fn strlen(mut c: *const u8) -> usize {
     pos
 }
 
+#[macro_export]
+macro_rules! entry_point {
+    ($path:path) => {
+        #[export_name = "_start"]
+        pub extern "C" fn __impl_start(argc: i32, argv: *const *const u8) {
+            #[cfg(test)]
+            crate::test_main();
+
+            let mut args = $crate::Args::new(argc, argv);
+
+            let f: fn(&mut $crate::Args) -> Result<(), &'static str> = $path;
+
+            match f(&mut args) {
+                Ok(_) => {
+                    $crate::syscall::sys_exit(0);
+                }
+                Err(msg) => {
+                    $crate::println!("fatal: {}", msg);
+                    $crate::syscall::sys_exit(1);
+                }
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 fn test_panic_handler(info: &PanicInfo<'_>) {
     println!("failed: {}", info);
