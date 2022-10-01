@@ -1,5 +1,8 @@
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(xv6rs_user::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 use xv6rs_user::{
     fcntl::O_RDWR,
@@ -9,6 +12,9 @@ use xv6rs_user::{
 
 #[no_mangle]
 extern "C" fn _start() {
+    #[cfg(test)]
+    crate::test_main();
+
     if sys_open("console\0", O_RDWR) < 0 {
         sys_mknod("console\0", 1, 1);
         sys_open("console\0", O_RDWR);

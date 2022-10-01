@@ -1,4 +1,8 @@
 #![no_std]
+#![cfg_attr(test, no_main)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 #![feature(alloc_error_handler)]
 
 pub mod fcntl;
@@ -13,6 +17,9 @@ use crate::syscall::sys_exit;
 
 #[panic_handler]
 pub fn panic(info: &PanicInfo<'_>) -> ! {
+    #[cfg(test)]
+    test_panic_handler(info);
+
     println!("panic: {}", info);
     sys_exit(1)
 }
@@ -64,4 +71,41 @@ pub fn strlen(mut c: *const u8) -> usize {
         }
     }
     pos
+}
+
+#[cfg(test)]
+fn test_panic_handler(info: &PanicInfo<'_>) {
+    println!("failed: {}", info);
+    sys_exit(1);
+}
+
+pub fn test_runner(tests: &[&dyn Testable]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test.run();
+    }
+
+    println!("\x1b[0;32mall tests finished!\x1b[0m");
+    sys_exit(0);
+}
+
+pub trait Testable {
+    fn run(&self) -> ();
+}
+
+impl<T> Testable for T
+where
+    T: Fn(),
+{
+    fn run(&self) {
+        print!("{}...\t", core::any::type_name::<T>());
+        self();
+        println!("\x1b[0;32m[ok]\x1b[0m");
+    }
+}
+
+#[cfg(test)]
+#[no_mangle]
+extern "C" fn _start() {
+    test_main();
 }

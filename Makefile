@@ -58,14 +58,10 @@ test: fetch fs.img
 	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_LIB_TEST)
 
 UPROGS=\
-	$(TARGET)/cat\
-	$(TARGET)/echo\
 	user/_forktest\
 	user/_grep\
-	$(TARGET)/init\
 	user/_kill\
 	user/_ln\
-	$(TARGET)/ls\
 	user/_mkdir\
 	user/_rm\
 	user/_sh\
@@ -74,10 +70,10 @@ UPROGS=\
 	user/_grind\
 	user/_wc\
 	user/_zombie\
-	$(TARGET)/helloworld\
-	$(TARGET)/exit42\
-	$(TARGET)/ping\
-	$(TARGET)/udp-server\
+	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user --message-format=json \
+						| jq -r 'select(.message == null) | select(.target.kind[0] == "bin") | .executable')\
+	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
+						| jq -r 'select(.profile.test == true) | .executable')\
 
 $(UPROGS): $(USER_TARGET_LIB)
 
