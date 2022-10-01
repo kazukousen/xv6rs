@@ -83,11 +83,11 @@ macro_rules! entry_point {
 
             let mut args = $crate::Args::new(argc, argv);
 
-            let f: fn(&mut $crate::Args) -> Result<(), &'static str> = $path;
+            let f: fn(&mut $crate::Args) -> Result<i32, &'static str> = $path;
 
             match f(&mut args) {
-                Ok(_) => {
-                    $crate::syscall::sys_exit(0);
+                Ok(c) => {
+                    $crate::syscall::sys_exit(c);
                 }
                 Err(msg) => {
                     $crate::println!("fatal: {}", msg);

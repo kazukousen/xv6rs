@@ -11,13 +11,13 @@ use xv6rs_user::{
 };
 
 entry_point!(main);
-fn main(args: &mut Args) -> Result<(), &'static str> {
+fn main(args: &mut Args) -> Result<i32, &'static str> {
     for arg in args.skip(1) {
         let fd = sys_open(arg, 0);
         cat(fd)?;
         sys_close(fd);
     }
-    Ok(())
+    Ok(0)
 }
 
 fn cat(fd: i32) -> Result<(), &'static str> {

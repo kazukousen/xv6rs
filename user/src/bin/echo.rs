@@ -8,7 +8,7 @@ use xv6rs_user::{entry_point, print, println, Args};
 
 entry_point!(main);
 
-fn main(args: &mut Args) -> Result<(), &'static str> {
+fn main(args: &mut Args) -> Result<i32, &'static str> {
     let c = args.skip(1).next().ok_or_else(|| "missing args")?;
     print!("{}", c);
 
@@ -17,5 +17,5 @@ fn main(args: &mut Args) -> Result<(), &'static str> {
     }
     println!();
 
-    Ok(())
+    Ok(0)
 }
