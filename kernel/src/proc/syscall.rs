@@ -198,6 +198,7 @@ impl Syscall for Proc {
         let mut path: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         self.arg_str(0, &mut path)?;
 
+        // argv: a pointer of null-terminated string, ..., 0
         let arg_base_addr = self.arg_raw(1)?;
         let mut argv: [Option<Box<[u8; MAXARGLEN]>>; MAXARG] = array![_ => None; MAXARG];
         for i in 0..MAXARG {

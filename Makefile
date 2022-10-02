@@ -73,7 +73,7 @@ UPROGS=\
 	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user --message-format=json \
 						| jq -r 'select(.message == null) | select(.target.kind[0] == "bin") | .executable')\
 	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
-						| jq -r 'select(.profile.test == true) | .executable')\
+						| jq -r 'select(.profile.test == true) | .executable' | xargs -I{} sh -c 'b={}; ln -s "$${b}" "$${b%-*}-test"; echo "$${b%-*}-test"')\
 
 $(UPROGS): $(USER_TARGET_LIB)
 

@@ -1,5 +1,6 @@
 fn main() {
     // Tell the Cargo that if the given file changes, to return the build script.
+    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/entry.S");
     println!("cargo:rerun-if-changed=src/kernelvec.S");
     println!("cargo:rerun-if-changed=src/swtch.S");
