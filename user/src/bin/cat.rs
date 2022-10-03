@@ -5,7 +5,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 use xv6rs_user::{
-    entry_point, println,
+    entry_point,
     syscall::{sys_close, sys_open, sys_read, sys_write},
     Args,
 };

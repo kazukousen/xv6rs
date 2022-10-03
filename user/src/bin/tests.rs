@@ -30,7 +30,7 @@ fn exec(buf: &[u8]) -> Result<(), &'static str> {
 }
 
 entry_point!(main);
-fn main(args: &mut Args) -> Result<i32, &'static str> {
+fn main(_: &mut Args) -> Result<i32, &'static str> {
     if sys_open("test_console\0", O_RDWR) < 0 {
         sys_mknod("test_console\0", 1, 1);
         sys_open("test_console\0", O_RDWR);

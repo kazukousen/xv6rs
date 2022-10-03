@@ -46,10 +46,10 @@ impl DirEnt {
 
 #[repr(u16)]
 enum InodeType {
-    Empty = 0,
+    // Empty = 0,
     Directory = 1,
     File = 2,
-    Device = 3,
+    // Device = 3,
 }
 
 #[repr(C)]

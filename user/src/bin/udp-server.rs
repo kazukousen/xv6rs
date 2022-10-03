@@ -9,7 +9,7 @@ use core::str::from_utf8_unchecked;
 use xv6rs_user::{
     net::{SAFamily, SockAddr},
     println,
-    syscall::{sys_bind, sys_close, sys_exit, sys_read, sys_socket, sys_write},
+    syscall::{sys_bind, sys_close, sys_exit, sys_read, sys_socket},
     Args,
 };
 
@@ -39,7 +39,7 @@ extern "C" fn _start(argc: i32, argv: *const *const u8) {
     }
 }
 
-fn serve(port: u16) -> Result<(), &'static str> {
+fn serve(_: u16) -> Result<(), &'static str> {
     let fd = sys_socket(1, 1, 1);
     println!("sockfd: {}", fd);
     sys_bind(
@@ -52,7 +52,7 @@ fn serve(port: u16) -> Result<(), &'static str> {
     );
 
     let mut buf = [0u8; 1024];
-    let mut n = sys_read(fd, &mut buf);
+    let n = sys_read(fd, &mut buf);
 
     println!("n={} msg={}", n, unsafe { from_utf8_unchecked(&buf) });
 

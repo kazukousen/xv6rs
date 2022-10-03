@@ -15,15 +15,17 @@ KERNEL_TARGET_BIN = $(TARGET)/xv6rs-kernel
 MKFS_TARGET_BIN = $(MKFS_TARGET)/xv6rs-mkfs
 USER_TARGET_LIB = $(TARGET)/xv6rs-user
 
-$(KERNEL_TARGET_BIN): fetch
-	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel --bin xv6rs-kernel
-
-$(USER_TARGET_LIB): fetch
-	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
-
+# fetch dependencies from the network
 .PHONY: fetch
 fetch:
 	$(CARGO) fetch
+
+# build the kernel binary
+$(KERNEL_TARGET_BIN):
+	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel --bin xv6rs-kernel
+
+$(USER_TARGET_LIB):
+	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
 
 .PHONY: build
 build: $(KERNEL_TARGET_BIN) $(USER_TARGET_LIB)
@@ -33,36 +35,19 @@ FWDPORT = $(shell expr `id -u` % 5000 + 25999)
 SERVERPORT = $(shell expr `id -u` % 5000 + 25099)
 
 QEMU ?= qemu-system-riscv64
-QEMUOPTS = -M virt \
+QEMU_OPTS_BASE = -M virt \
     -bios none \
     -nographic \
     -m 1G \
     -smp 3
-QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
-QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-QEMUOPTS += -netdev user,id=net0,hostfwd=udp::$(FWDPORT)-:2000 -object filter-dump,id=net0,netdev=net0,file=packets.pcap
-QEMUOPTS += -device e1000,netdev=net0,bus=pcie.0
+QEMU_OPTS_BASE += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMU_OPTS_BASE += -netdev user,id=net0,hostfwd=udp::$(FWDPORT)-:2000 -object filter-dump,id=net0,netdev=net0,file=packets.pcap
+QEMU_OPTS_BASE += -device e1000,netdev=net0,bus=pcie.0
+QEMU_OPTS := $(QEMU_OPTS_BASE) -drive file=fs.img,if=none,format=raw,id=x0
 
 .PHONY: qemu
 qemu: build fs.img
-	E1000_DEBUG=tx,txerr,rx,rxerr,general $(QEMU) $(QEMUOPTS) -kernel $(KERNEL_TARGET_BIN)
-
-# RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
-.PHONY: test
-test: fetch fs.img
-	@echo "building the test harness (rustc --test) artifact of kernel/lib.rs ..."
-	$(eval KERNEL_LIB_TEST := $(shell RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_TEST) -p xv6rs-kernel --lib --no-run --message-format=json \
-						| jq -r 'select(.profile.test == true) | .executable'))
-	@echo "done $(KERNEL_LIB_TEST)"
-	@echo "executing the artifact on qemu ..."
-	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_LIB_TEST)
-
-user/src/bin/tests_initcode: user/src/bin/tests_initcode.S
-	riscv64-unknown-elf-gcc -march=rv64g -nostdinc -c $@.S -o $@.o
-	riscv64-unknown-elf-ld -z max-page-size=4096 -N -e start -Ttext 0 -o $@.out $@.o
-	riscv64-unknown-elf-objcopy -S -O binary $@.out $@
-	rm $@.out $@.o
-	# od -t xC $@
+	E1000_DEBUG=tx,txerr,rx,rxerr,general $(QEMU) $(QEMU_OPTS) -kernel $(KERNEL_TARGET_BIN)
 
 UPROGS=\
 	user/_forktest\
@@ -77,18 +62,41 @@ UPROGS=\
 	user/_grind\
 	user/_wc\
 	user/_zombie\
-	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user --message-format=json \
-						| jq -r 'select(.message == null) | select(.target.kind[0] == "bin") | .executable')\
-	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
-						| jq -r 'select(.profile.test == true) | .executable' | xargs -I{} sh -c 'b={}; ln -s "$${b}" "$${b%-*}.test"; echo "$${b%-*}.test"')\
 
-$(UPROGS): $(USER_TARGET_LIB)
+USER_PROGRAMS=\
+	$(shell find user/src/bin -type f -name '*.rs' | sed 's%user/src/bin/\(.*\).rs%$(TARGET)/\1%g')
 
-$(MKFS_TARGET_BIN): fetch
+$(USER_PROGRAMS): $(USER_TARGET_LIB)
+
+$(MKFS_TARGET_BIN):
 	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
 
-fs.img: $(MKFS_TARGET_BIN) $(UPROGS) README.md
-	$(MKFS_TARGET_BIN) $@ README.md $(UPROGS)
+fs.img: $(MKFS_TARGET_BIN) $(UPROGS) $(USER_PROGRAMS) README.md
+	$(MKFS_TARGET_BIN) $@ README.md $(UPROGS) $(USER_PROGRAMS)
+
+# RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
+.PHONY: test
+test: $(MKFS_TARGET_BIN)
+	@echo "building the test harness (rustc --test) artifact of user/... ..."
+	$(eval USER_LIB_TEST := $(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
+						| jq -r 'select(.profile.test == true) | .executable' | xargs -I{} sh -c 'b={}; ln -s "$${b}" "$${b%-*}.test"; echo "$${b%-*}.test"'))
+	@echo "done $(USER_LIB_TEST)"
+	@echo "creating the file system ..."
+	$(MKFS_TARGET_BIN) fs.test.img $(USER_LIB_TEST) $(USER_PROGRAMS)
+	@echo "building the test harness (rustc --test) artifact of kernel/lib.rs ..."
+	$(eval KERNEL_LIB_TEST := $(shell RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_TEST) -p xv6rs-kernel --lib --no-run --message-format=json \
+						| jq -r 'select(.profile.test == true) | .executable'))
+	@echo "done $(KERNEL_LIB_TEST)"
+	@echo "executing the artifact on qemu ..."
+	$(eval QEMU_OPTS_TEST := $(QEMU_OPTS_BASE) -drive file=fs.test.img,if=none,format=raw,id=x0)
+	$(QEMU) $(QEMU_OPTS_TEST) -kernel $(KERNEL_LIB_TEST)
+
+user/src/bin/tests_initcode: user/src/bin/tests_initcode.S
+	riscv64-unknown-elf-gcc -march=rv64g -nostdinc -c $@.S -o $@.o
+	riscv64-unknown-elf-ld -z max-page-size=4096 -N -e start -Ttext 0 -o $@.out $@.o
+	riscv64-unknown-elf-objcopy -S -O binary $@.out $@
+	rm $@.out $@.o
+	# od -t xC $@
 
 .PHONY: clean
 clean:
