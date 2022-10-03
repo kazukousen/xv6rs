@@ -523,7 +523,7 @@ pub fn either_copy_in(is_user: bool, src: *const u8, dst: *mut u8, count: usize)
 
 static mut FIRST: bool = true;
 
-/// an allocated process is switched to here by scheduler().
+/// a new allocated process is switched to here by scheduler().
 unsafe fn forkret() {
     CPU_TABLE.my_proc().inner.unlock();
     if FIRST {
@@ -546,6 +546,7 @@ pub static INITCODE: [u8; 51] = [
     0x00, 0x00, 0x00,
 ];
 
+/// first usertests program that calls exec("/tests")
 #[cfg(test)]
 static USERTESTS_INITCODE: [u8; 40] = [
     0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x85, 0x01, 0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x85, 0x01,
@@ -559,7 +560,7 @@ pub fn usertests() {
     let pdata = p.data.get_mut();
     let pgt = pdata.page_table.as_mut().unwrap();
 
-    // clear the first page in the pagetable and then map new code which exits with 42 code
+    // clear the first page in the pagetable and then map new code.
     // it will be executed as a child process by forking.
     pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
     pgt.uvm_init(&USERTESTS_INITCODE)
