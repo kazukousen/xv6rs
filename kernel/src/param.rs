@@ -6,6 +6,7 @@ pub const UART0: usize = 0x1000_0000;
 pub const UART0_IRQ: usize = 10;
 
 pub const QEMU_TEST0: usize = 0x100000;
+#[cfg(test)]
 pub const QEMU_EXIT_SUCCESS: u32 = 0x5555;
 pub const QEMU_EXIT_FAIL: u32 = 0x13333; // exit 1
 

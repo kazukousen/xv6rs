@@ -110,12 +110,10 @@ impl Socket {
         }
     }
 
-    fn close(&self) {
+    fn close(&self) -> Result<(), &'static str> {
         match &self.typ {
             SocketType::TCP => panic!("unimplemented"),
-            SocketType::UDP => {
-                udp::close(self.cb_idx);
-            }
+            SocketType::UDP => udp::close(self.cb_idx),
         }
     }
 
@@ -145,6 +143,6 @@ impl Socket {
 
 impl Drop for Socket {
     fn drop(&mut self) {
-        self.close();
+        self.close().expect("cannot close");
     }
 }

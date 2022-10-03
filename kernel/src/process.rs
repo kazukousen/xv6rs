@@ -128,7 +128,7 @@ impl ProcessTable {
                 }
                 // make sure the child isn't still in exit() or swtch()
                 let child = &mut self.tables[i];
-                let mut cguard = child.inner.lock();
+                let cguard = child.inner.lock();
 
                 have_kids = true;
 

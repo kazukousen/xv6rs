@@ -21,10 +21,10 @@ fetch:
 	$(CARGO) fetch
 
 # build the kernel binary
-$(KERNEL_TARGET_BIN):
+$(KERNEL_TARGET_BIN): fetch
 	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel --bin xv6rs-kernel
 
-$(USER_TARGET_LIB):
+$(USER_TARGET_LIB): fetch
 	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
 
 .PHONY: build

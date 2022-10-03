@@ -13,7 +13,7 @@ unsafe fn write(v: usize) {
 }
 
 pub enum MPPMode {
-    User = 0,
+    // User = 0,
     Supervisor = 1,
     Machine = 3,
 }

@@ -11,8 +11,8 @@ use super::{
 #[repr(u8)]
 #[derive(PartialEq, Debug)]
 pub enum Protocol {
-    UDP = 17,
     TCP = 6,
+    UDP = 17,
 }
 
 #[repr(C, packed)]
@@ -99,14 +99,11 @@ pub fn rx(mut m: Box<MBuf>) {
         Protocol::TCP => {
             panic!("ip_rx: handling tcp is unimpelemented yet");
         }
-        Protocol::UDP => {
-            match udp::rx(m, toggle_endian32(hdr.src_ip_addr)) {
-                _ => {}
-                Err(msg) => {
-                    println!("ip_rx: udp failed: {}", msg);
-                }
+        Protocol::UDP => match udp::rx(m, toggle_endian32(hdr.src_ip_addr)) {
+            Err(msg) => {
+                println!("ip_rx: udp failed: {}", msg);
             }
-            return;
-        }
+            Ok(_) => return,
+        },
     }
 }

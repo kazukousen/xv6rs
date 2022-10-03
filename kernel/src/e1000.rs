@@ -73,7 +73,9 @@ const E1000_RADV: u32 = 0x0282C; // RX Interrupt Absolute Delay Timer
 const E1000_RDH: u32 = 0x02810; // RX Descriptor Head
 const E1000_RDT: u32 = 0x02818; // RX Descriptor Tail
 const E1000_RDLEN: u32 = 0x02808; // RX Descriptor Length
-const E1000_RSRPD: u32 = 0x02c00; // RX Small Packet Detect Interrupt
+
+// const E1000_RSRPD: u32 = 0x02c00; // RX Small Packet Detect Interrupt
+
 const E1000_TDBAL: u32 = 0x03800; // TX Descriptor Base Address Low
 const E1000_TDLEN: u32 = 0x03808; // TX Descriptor Length
 const E1000_TDH: u32 = 0x03810; // TX Descriptor Head
@@ -86,7 +88,7 @@ const E1000_TXD_CMD_RS: u8 = 0x08; // End of Packet
 const E1000_RXD_STAT_DD: u8 = 0x01; // Descriptor Done
 const E1000_RXD_STAT_EOP: u8 = 0x02; // End of Packet
 
-const DATA_MAX: usize = 1518;
+// const DATA_MAX: usize = 1518;
 
 /// these queues provide pointers to memory location for the DMA.
 #[repr(C, align(16))]

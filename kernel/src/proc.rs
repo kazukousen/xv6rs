@@ -306,7 +306,7 @@ impl Proc {
         let child =
             unsafe { PROCESS_TABLE.alloc_proc() }.ok_or_else(|| "cannot allocate new process")?;
 
-        let mut cguard = child.inner.lock();
+        let cguard = child.inner.lock();
 
         // copy user memory from parent to child.
         let pdata = self.data.get_mut();

@@ -8,7 +8,7 @@ const RHR: usize = 0;
 const THR: usize = 0;
 const IER: usize = 1;
 const FCR: usize = 2;
-const ISR: usize = 2;
+// const ISR: usize = 2;
 const LCR: usize = 3;
 const LSR: usize = 5;
 

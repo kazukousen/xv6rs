@@ -22,7 +22,7 @@ use crate::{
     bio::BCACHE,
     cpu::CpuTable,
     e1000::E1000,
-    param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
+    param::{QEMU_EXIT_FAIL, QEMU_TEST0},
     process::PROCESS_TABLE,
     virtio::DISK,
 };
@@ -116,7 +116,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 
     crate::proc::usertests();
 
-    unsafe { ptr::write_volatile(QEMU_TEST0 as *mut u32, QEMU_EXIT_SUCCESS) };
+    unsafe { ptr::write_volatile(QEMU_TEST0 as *mut u32, crate::param::QEMU_EXIT_SUCCESS) };
 }
 
 pub trait Testable {
