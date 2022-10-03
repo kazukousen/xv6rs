@@ -57,6 +57,12 @@ test: fetch fs.img
 	@echo "executing the artifact on qemu ..."
 	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_LIB_TEST)
 
+user/src/bin/tests_initcode: user/src/bin/tests_initcode.S
+	riscv64-unknown-elf-gcc -march=rv64g -nostdinc -c user/src/bin/tests_initcode.S -o user/src/bin/tests_initcode.o
+	riscv64-unknown-elf-ld -z max-page-size=4096 -N -e start -Ttext 0 -o user/src/bin/tests_initcode.out user/src/bin/tests_initcode.o
+	riscv64-unknown-elf-objcopy -S -O binary user/src/bin/tests_initcode.out user/src/bin/tests_initcode
+	# od -t xC user/src/bin/tests_initcode
+
 UPROGS=\
 	user/_forktest\
 	user/_grep\
@@ -73,7 +79,7 @@ UPROGS=\
 	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user --message-format=json \
 						| jq -r 'select(.message == null) | select(.target.kind[0] == "bin") | .executable')\
 	$(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
-						| jq -r 'select(.profile.test == true) | .executable')\
+						| jq -r 'select(.profile.test == true) | .executable' | xargs -I{} sh -c 'b={}; ln -s "$${b}" "$${b%-*}.test"; echo "$${b%-*}.test"')\
 
 $(UPROGS): $(USER_TARGET_LIB)
 

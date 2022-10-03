@@ -547,6 +547,45 @@ pub static INITCODE: [u8; 51] = [
 ];
 
 #[cfg(test)]
+static USERTESTS_INITCODE: [u8; 40] = [
+    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x85, 0x01, 0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x85, 0x01,
+    0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00, 0x2f, 0x74, 0x65, 0x73, 0x74, 0x73, 0x00, 0x00,
+    0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+#[cfg(test)]
+pub fn usertests() {
+    let p = unsafe { CPU_TABLE.my_proc() };
+    let pdata = p.data.get_mut();
+    let pgt = pdata.page_table.as_mut().unwrap();
+
+    // clear the first page in the pagetable and then map new code which exits with 42 code
+    // it will be executed as a child process by forking.
+    pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
+    pgt.uvm_init(&USERTESTS_INITCODE)
+        .expect("cannot map the test code into the page");
+
+    // the child process would be scheduled on cpu_id=1, then runs the code in user space.
+    let child_pid = p.fork().expect("fork failed");
+    assert_eq!(1, child_pid);
+
+    let waited_pid = unsafe { PROCESS_TABLE.wait(p, 1) }.expect("wait failed");
+    assert_eq!(child_pid, waited_pid);
+
+    // check reported exit status
+    let pdata = p.data.get_mut();
+    let pgt = pdata.page_table.as_mut().unwrap();
+    let pa = pgt.walk_addr(0).expect("cannot walk") as *const u8;
+    let reported_status = unsafe { (pa.offset(1) as *const i32).as_ref().unwrap() };
+    assert_eq!(0i32, *reported_status);
+
+    // restore
+    pgt.unmap_pages(0, 1, true).expect("cannot unmap test code");
+    pgt.uvm_init(&INITCODE)
+        .expect("cannot map the initcode into the page");
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -556,56 +595,5 @@ mod tests {
         assert_eq!(PAGESIZE, pdata.sz);
         let tf = unsafe { pdata.trapframe.as_ref() }.unwrap();
         assert_eq!(PAGESIZE, tf.sp);
-    }
-
-    /*
-     * immediately exit with status 42.
-     *
-     * od -t xC exit42code
-     *
-     * ```
-     * #include "syscall.h"
-     * .globl start
-     * start:
-     *   li a0, 42
-     *   li a7, SYS_exit
-     * ecall
-     * ```
-     */
-    static EXIT_42_CODE: [u8; 12] = [
-        0x13, 0x05, 0xa0, 0x02, 0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
-    ];
-
-    #[test_case]
-    fn test_fork_exit_wait_with_return_42_code() {
-        let p = unsafe { CPU_TABLE.my_proc() };
-        let pdata = p.data.get_mut();
-        let pgt = pdata.page_table.as_mut().unwrap();
-
-        // clear the first page in the pagetable and then map new code which exits with 42 code
-        // it will be executed as a child process by forking.
-        pgt.unmap_pages(0, 1, true).expect("cannot unmap initcode");
-        pgt.uvm_init(&EXIT_42_CODE)
-            .expect("cannot map the test code into the page");
-
-        // the child process would be scheduled on cpu_id=1, then runs the code in user space,
-        // exits with status 42.
-        let child_pid = p.fork().expect("fork failed");
-        assert_eq!(1, child_pid);
-
-        let waited_pid = unsafe { PROCESS_TABLE.wait(p, 1) }.expect("wait failed");
-        assert_eq!(child_pid, waited_pid);
-
-        // check reported exit status
-        let pdata = p.data.get_mut();
-        let pgt = pdata.page_table.as_mut().unwrap();
-        let pa = pgt.walk_addr(0).expect("cannot walk") as *const u8;
-        let reported_status = unsafe { (pa.offset(1) as *const i32).as_ref().unwrap() };
-        assert_eq!(42i32, *reported_status);
-
-        // restore
-        pgt.unmap_pages(0, 1, true).expect("cannot unmap test code");
-        pgt.uvm_init(&INITCODE)
-            .expect("cannot map the initcode into the page");
     }
 }

@@ -77,13 +77,7 @@ fn ls(path: &str) -> Result<(), &'static str> {
                     continue;
                 }
 
-                unsafe { ptr::copy(de.name.as_ptr(), p, DIRSIZ) };
-
-                if let Err(msg) = stat(unsafe { from_utf8_unchecked(&buf) }, &mut st) {
-                    println!("ls: cannot stat: {}", msg);
-                    continue;
-                }
-
+                // get the name to display
                 let mut name = [0u8; DIRSIZ + 1];
                 for i in 0..strlen(de.name.as_ptr()) {
                     name[i] = de.name[i];
@@ -91,6 +85,14 @@ fn ls(path: &str) -> Result<(), &'static str> {
                 for i in strlen(de.name.as_ptr())..=DIRSIZ {
                     name[i] = b' ';
                 }
+
+                // get the stat to display
+                unsafe { ptr::copy(de.name.as_ptr(), p, DIRSIZ) };
+                if let Err(msg) = stat(unsafe { from_utf8_unchecked(&buf) }, &mut st) {
+                    println!("ls: cannot stat: {}", msg);
+                    continue;
+                }
+
                 println!(
                     "{} {:?} {} {}",
                     unsafe { from_utf8_unchecked(&name) },
