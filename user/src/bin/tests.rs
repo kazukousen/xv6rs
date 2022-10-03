@@ -70,7 +70,7 @@ fn main(args: &mut Args) -> Result<i32, &'static str> {
 
         let mut is_test = false;
         for i in (0..DIRSIZ - 4).rev() {
-            is_test = de.name[i] == b'-'
+            is_test = de.name[i] == b'.'
                 && de.name[i + 1] == b't'
                 && de.name[i + 2] == b'e'
                 && de.name[i + 3] == b's'
