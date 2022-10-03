@@ -58,10 +58,11 @@ test: fetch fs.img
 	$(QEMU) $(QEMUOPTS) -kernel $(KERNEL_LIB_TEST)
 
 user/src/bin/tests_initcode: user/src/bin/tests_initcode.S
-	riscv64-unknown-elf-gcc -march=rv64g -nostdinc -c user/src/bin/tests_initcode.S -o user/src/bin/tests_initcode.o
-	riscv64-unknown-elf-ld -z max-page-size=4096 -N -e start -Ttext 0 -o user/src/bin/tests_initcode.out user/src/bin/tests_initcode.o
-	riscv64-unknown-elf-objcopy -S -O binary user/src/bin/tests_initcode.out user/src/bin/tests_initcode
-	# od -t xC user/src/bin/tests_initcode
+	riscv64-unknown-elf-gcc -march=rv64g -nostdinc -c $@.S -o $@.o
+	riscv64-unknown-elf-ld -z max-page-size=4096 -N -e start -Ttext 0 -o $@.out $@.o
+	riscv64-unknown-elf-objcopy -S -O binary $@.out $@
+	rm $@.out $@.o
+	# od -t xC $@
 
 UPROGS=\
 	user/_forktest\

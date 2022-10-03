@@ -23,7 +23,6 @@ use crate::{
     cpu::CpuTable,
     e1000::E1000,
     param::{QEMU_EXIT_FAIL, QEMU_EXIT_SUCCESS, QEMU_TEST0},
-    proc::usertests,
     process::PROCESS_TABLE,
     virtio::DISK,
 };
@@ -115,7 +114,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 
     println!("\x1b[0;32mall kernel tests finished!\x1b[0m");
 
-    usertests();
+    crate::proc::usertests();
 
     unsafe { ptr::write_volatile(QEMU_TEST0 as *mut u32, QEMU_EXIT_SUCCESS) };
 }
