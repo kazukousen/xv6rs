@@ -13,23 +13,47 @@ CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 
 KERNEL_TARGET_BIN = $(TARGET)/xv6rs-kernel
 MKFS_TARGET_BIN = $(MKFS_TARGET)/xv6rs-mkfs
-USER_TARGET_LIB = $(TARGET)/xv6rs-user
 
 # fetch dependencies from the network
-.PHONY: fetch
-fetch:
+Cargo.lock: Cargo.toml
 	$(CARGO) fetch
 
+KERNEL_SRC := $(shell find kernel -type f)
+USER_SRC := $(shell find user -type f)
+MKFS_SRC := $(shell find mkfs -type f)
+
 # build the kernel binary
-$(KERNEL_TARGET_BIN): fetch
+$(KERNEL_TARGET_BIN): Cargo.lock $(KERNEL_SRC)
 	RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" $(CARGO_BUILD) -p xv6rs-kernel --bin xv6rs-kernel
 
-$(USER_TARGET_LIB): fetch
+USER_PROGRAMS=\
+	$(shell find user/src/bin -type f -name '*.rs' | sed 's%user/src/bin/\(.*\).rs%$(TARGET)/\1%g')
+
+$(USER_PROGRAMS): Cargo.lock $(USER_SRC)
 	RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_BUILD) -p xv6rs-user
 
 .PHONY: build
-build: $(KERNEL_TARGET_BIN) $(USER_TARGET_LIB)
+build: $(KERNEL_TARGET_BIN) $(USER_PROGRAMS)
 
+UPROGS=\
+	user/_forktest\
+	user/_grep\
+	user/_kill\
+	user/_ln\
+	user/_mkdir\
+	user/_rm\
+	user/_sh\
+	user/_stressfs\
+	user/_usertests\
+	user/_grind\
+	user/_wc\
+	user/_zombie\
+
+$(MKFS_TARGET_BIN): Cargo.lock $(MKFS_SRC)
+	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
+
+fs.img: $(MKFS_TARGET_BIN) $(UPROGS) $(USER_PROGRAMS) README.md
+	$(MKFS_TARGET_BIN) $@ README.md $(UPROGS) $(USER_PROGRAMS)
 
 FWDPORT = $(shell expr `id -u` % 5000 + 25999)
 SERVERPORT = $(shell expr `id -u` % 5000 + 25099)
@@ -48,31 +72,6 @@ QEMU_OPTS := $(QEMU_OPTS_BASE) -drive file=fs.img,if=none,format=raw,id=x0
 .PHONY: qemu
 qemu: build fs.img
 	E1000_DEBUG=tx,txerr,rx,rxerr,general $(QEMU) $(QEMU_OPTS) -kernel $(KERNEL_TARGET_BIN)
-
-UPROGS=\
-	user/_forktest\
-	user/_grep\
-	user/_kill\
-	user/_ln\
-	user/_mkdir\
-	user/_rm\
-	user/_sh\
-	user/_stressfs\
-	user/_usertests\
-	user/_grind\
-	user/_wc\
-	user/_zombie\
-
-USER_PROGRAMS=\
-	$(shell find user/src/bin -type f -name '*.rs' | sed 's%user/src/bin/\(.*\).rs%$(TARGET)/\1%g')
-
-$(USER_PROGRAMS): $(USER_TARGET_LIB)
-
-$(MKFS_TARGET_BIN):
-	$(CARGO) build --frozen $(RELEASE) --target $(CARGO_MKFS_TARGET) -p xv6rs-mkfs
-
-fs.img: $(MKFS_TARGET_BIN) $(UPROGS) $(USER_PROGRAMS) README.md
-	$(MKFS_TARGET_BIN) $@ README.md $(UPROGS) $(USER_PROGRAMS)
 
 # RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
 .PHONY: test
