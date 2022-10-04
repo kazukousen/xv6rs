@@ -75,7 +75,7 @@ qemu: build fs.img
 
 # RUSTFLAGS="--C link-arg=-Tkernel/kernel.ld" cargo test --frozen --release --target riscv64imac-unknown-none-elf -p xv6rs-kernel --lib --no-run
 .PHONY: test
-test: $(MKFS_TARGET_BIN)
+test: $(MKFS_TARGET_BIN) $(USER_PROGRAMS)
 	@echo "building the test harness (rustc --test) artifact of user/... ..."
 	$(eval USER_LIB_TEST := $(shell RUSTFLAGS="--C link-arg=-Tuser/user.ld" $(CARGO_TEST) -p xv6rs-user --no-run --message-format=json \
 						| jq -r 'select(.profile.test == true) | .executable' | xargs -I{} sh -c 'b={}; ln -s "$${b}" "$${b%-*}.test"; echo "$${b%-*}.test"'))
@@ -101,6 +101,7 @@ user/src/bin/tests_initcode: user/src/bin/tests_initcode.S
 clean:
 	rm -rf target/
 	rm -f fs.img
+	rm -f fs.test.img
 
 py-udp-server:
 	python3 tools/udp-server.py $(SERVERPORT)
