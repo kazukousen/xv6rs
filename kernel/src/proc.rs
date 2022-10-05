@@ -499,6 +499,7 @@ impl Proc {
 
 pub fn either_copy_out(is_user: bool, dst: *mut u8, src: *const u8, count: usize) {
     if is_user {
+        // copy from kernel to user
         let p = unsafe { CPU_TABLE.my_proc() };
         p.data
             .get_mut()
@@ -511,6 +512,7 @@ pub fn either_copy_out(is_user: bool, dst: *mut u8, src: *const u8, count: usize
 
 pub fn either_copy_in(is_user: bool, src: *const u8, dst: *mut u8, count: usize) {
     if is_user {
+        // copy from user to kernel
         let p = unsafe { CPU_TABLE.my_proc() };
         p.data
             .get_mut()

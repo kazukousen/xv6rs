@@ -37,8 +37,9 @@
 //! but only one process can lock the inode at time.
 //! iget() increments refcnt so that the inode stays in the table and pointers to it remain valid.
 
-use core::{cmp::min, mem, ptr};
+use core::{cmp::min, mem, ptr, str::from_utf8_unchecked};
 
+use alloc::format;
 use array_macro::array;
 
 use crate::{
@@ -217,7 +218,14 @@ impl InodeTable {
         drop(idata);
 
         // link the new inode into the parent dir.
-        dirdata.dirlink(&name, inode.inum).expect("create: dirlink");
+        dirdata.dirlink(&name, inode.inum).expect(
+            format!(
+                "create: dirlink name={} inum={}",
+                unsafe { from_utf8_unchecked(&name) },
+                inode.inum
+            )
+            .as_str(),
+        );
         drop(dirdata);
         drop(dir);
 
@@ -618,7 +626,7 @@ impl InodeData {
     }
 
     /// Write data to inode.
-    fn writei(
+    pub fn writei(
         &mut self,
         is_user: bool,
         mut src: *const u8,
@@ -682,13 +690,9 @@ impl InodeData {
                 continue;
             }
 
-            for i in 0..DIRSIZ {
-                if de.name[i] != name[i] {
-                    break;
-                }
-                if de.name[i] == 0 {
-                    return Some((INODE_TABLE.iget(dev, de.inum as u32), off));
-                }
+            // compare two slices
+            if &de.name == name {
+                return Some((INODE_TABLE.iget(dev, de.inum as u32), off));
             }
         }
 
@@ -976,6 +980,22 @@ mod tests {
     }
 
     #[test_case]
+    fn lookup_not_exist_by_dirlookup() {
+        let inode = INODE_TABLE.iget(ROOTDEV, ROOTINO);
+        let mut idata = inode.ilock();
+        let mut f = [0u8; DIRSIZ];
+        f[0] = b'n';
+        f[1] = b'o';
+        f[2] = b't';
+        f[3] = b'e';
+        f[4] = b'x';
+        f[5] = b'i';
+        f[6] = b's';
+        f[7] = b't';
+        assert!(idata.dirlookup(&f).is_none());
+    }
+
+    #[test_case]
     fn lookup_root_init_by_namei() {
         let inode = INODE_TABLE
             .namei(&[b'/', b'i', b'n', b'i', b't', 0])
@@ -1014,5 +1034,17 @@ mod tests {
         let offset = idata.find_available_dirent_offset(&mut de).expect("dirent");
         assert_eq!(4064, offset);
         drop(idata);
+    }
+
+    #[test_case]
+    fn test_create() {
+        LOG.begin_op();
+        let path = [
+            b'c', b'r', b'e', b'a', b't', b'e', b'f', b'i', b'l', b'e', 0,
+        ];
+        let inode = INODE_TABLE.create(&path, InodeType::File, 0, 0);
+        assert!(INODE_TABLE.unlink(&path).is_ok());
+        drop(inode);
+        LOG.end_op();
     }
 }
