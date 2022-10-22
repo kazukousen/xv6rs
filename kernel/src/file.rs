@@ -170,7 +170,18 @@ impl File {
                 Ok(i)
             }
             FileInner::Socket(ref s) => s.write(addr, n),
-            _ => panic!("unimplesented yet"),
+            FileInner::Inode(ref f) => {
+                LOG.begin_op();
+                let mut idata = f.inode.as_ref().unwrap().ilock();
+                let offset = unsafe { &mut (*f.offset.get()) };
+                idata
+                    .writei(true, addr as *const u8, *offset, n)
+                    .or_else(|()| Err("cannot write the file"))?;
+                *offset += n;
+                drop(idata);
+                LOG.end_op();
+                Ok(n)
+            }
         }
     }
 

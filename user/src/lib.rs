@@ -134,3 +134,21 @@ where
 extern "C" fn _start() {
     test_main();
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        fcntl::{O_CREATE, O_RDWR, O_WRONLY},
+        syscall::{sys_chdir, sys_close, sys_mkdir, sys_open, sys_unlink, sys_write},
+    };
+
+    use super::*;
+
+    #[test_case]
+    fn test_iput() {
+        assert!(sys_mkdir("iputdir\0") >= 0);
+        assert!(sys_chdir("iputdir\0") >= 0);
+        assert!(sys_unlink("../iputdir\0") >= 0);
+        assert!(sys_chdir("/\0") >= 0);
+    }
+}
