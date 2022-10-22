@@ -202,8 +202,6 @@ impl InodeTable {
         if typ == InodeType::Directory {
             // Create . and .. entries if the new inode is a directory.
             // No nlink++ for "." because avoid cyclic ref count.
-            parent_dirdata.dinode.nlink += 1; // for ".."
-            parent_dirdata.iupdate();
 
             let mut name = [0u8; DIRSIZ];
             name[0] = b'.';
@@ -226,6 +224,12 @@ impl InodeTable {
             )
             .as_str(),
         );
+
+        if typ == InodeType::Directory {
+            parent_dirdata.dinode.nlink += 1; // for ".."
+            parent_dirdata.iupdate();
+        }
+
         drop(parent_dirdata);
         drop(parent_dir);
 
@@ -786,17 +790,16 @@ impl InodeData {
     /// returns the offset of the available entry.
     fn find_available_dirent_offset(&mut self, de: &mut DirEnt) -> Result<usize, &'static str> {
         let de_size = mem::size_of::<DirEnt>();
-        let mut offset = 0;
 
         for off in (0..self.dinode.size as usize).step_by(de_size) {
             self.readi(false, de as *mut _ as *mut u8, off, de_size)
                 .or_else(|_| Err("failed to read entry in directory inode"))?;
             if de.inum == 0 {
-                offset = off;
+                return Ok(off);
             }
         }
 
-        Ok(offset)
+        Ok(self.dinode.size as usize)
     }
 
     /// Is the directory this empty except for '.' and '..' ?
@@ -1045,17 +1048,6 @@ mod tests {
     }
 
     #[test_case]
-    fn test_find_free_dirent() {
-        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
-        let cwd = pdata.cwd.as_ref().unwrap();
-        let mut idata = cwd.ilock();
-        let mut de = DirEnt::empty();
-        let offset = idata.find_available_dirent_offset(&mut de).expect("dirent");
-        assert_eq!(4064, offset);
-        drop(idata);
-    }
-
-    #[test_case]
     fn test_create() {
         LOG.begin_op();
         let path = [
@@ -1073,9 +1065,34 @@ mod tests {
         // create a new dir
         let new_dir_path = [b'c', b'r', b'e', b'a', b't', b'e', b'd', b'i', b'r', 0];
         let inode = INODE_TABLE.create(&new_dir_path, InodeType::Directory, 0, 0);
-        drop(inode);
-        let inode = INODE_TABLE.namei(&new_dir_path).expect("the dir not found");
         let new_inum = inode.inum;
+        let idata = inode.ilock();
+        assert_eq!(InodeType::Directory, idata.dinode.typ);
+        assert_eq!(1u16, idata.dinode.nlink);
+        drop(idata);
+        drop(inode);
+        LOG.end_op();
+
+        // search the new dir
+        let inode = INODE_TABLE.namei(&new_dir_path).expect("the dir not found");
+        assert_eq!(new_inum, inode.inum);
+
+        // dirlink '.', '..'
+        let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+        name[0] = b'.';
+        let mut idata = inode.ilock();
+        let (self_reference, _) = idata
+            .dirlookup(&name)
+            .expect(format!("cannot dirent `{}`", unsafe { from_utf8_unchecked(&name) }).as_str());
+        assert_eq!(new_inum, self_reference.inum);
+        drop(self_reference);
+        name[1] = b'.';
+        let (parent, _) = idata
+            .dirlookup(&name)
+            .expect(format!("cannot dirent `{}`", unsafe { from_utf8_unchecked(&name) }).as_str());
+        assert_eq!(1u32, parent.inum);
+        drop(parent);
+        drop(idata);
 
         // change directory
         let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
@@ -1095,6 +1112,7 @@ mod tests {
             .expect("lookup");
         assert_eq!(1u32, parent.inum);
 
+        LOG.begin_op();
         // tidy up
         // change the current directory
         let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
