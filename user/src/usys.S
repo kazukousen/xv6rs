@@ -23,16 +23,6 @@ __read:
  li a7, 5
  ecall
  ret
-.global __write
-__write:
- li a7, 16
- ecall
- ret
-.global __close
-__close:
- li a7, 21
- ecall
- ret
 .global __kill
 __kill:
  li a7, 6
@@ -43,34 +33,9 @@ __exec:
  li a7, 7
  ecall
  ret
-.global __open
-__open:
- li a7, 15
- ecall
- ret
-.global __mknod
-__mknod:
- li a7, 17
- ecall
- ret
-.global __unlink
-__unlink:
- li a7, 18
- ecall
- ret
 .global __fstat
 __fstat:
  li a7, 8
- ecall
- ret
-.global __link
-__link:
- li a7, 19
- ecall
- ret
-.global __mkdir
-__mkdir:
- li a7, 20
  ecall
  ret
 .global __chdir
@@ -101,6 +66,41 @@ __sleep:
 .global __uptime
 __uptime:
  li a7, 14
+ ecall
+ ret
+.global __open
+__open:
+ li a7, 15
+ ecall
+ ret
+.global __write
+__write:
+ li a7, 16
+ ecall
+ ret
+.global __mknod
+__mknod:
+ li a7, 17
+ ecall
+ ret
+.global __unlink
+__unlink:
+ li a7, 18
+ ecall
+ ret
+.global __link
+__link:
+ li a7, 19
+ ecall
+ ret
+.global __mkdir
+__mkdir:
+ li a7, 20
+ ecall
+ ret
+.global __close
+__close:
+ li a7, 21
  ecall
  ret
 .global __socket
