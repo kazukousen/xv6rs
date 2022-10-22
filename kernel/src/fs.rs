@@ -186,13 +186,13 @@ impl InodeTable {
     /// directory.
     pub fn create(&self, path: &[u8], typ: InodeType, major: u16, minor: u16) -> Inode {
         // look up the parent dir inode
-        let mut name = [0u8; DIRSIZ];
-        let dir = self
-            .nameiparent(&path, &mut name)
+        let mut basename = [0u8; DIRSIZ];
+        let parent_dir = self
+            .nameiparent(&path, &mut basename)
             .expect("create: parent not found");
-        let mut dirdata = dir.ilock();
+        let mut parent_dirdata = parent_dir.ilock();
 
-        let inode = self.ialloc(dir.dev, typ);
+        let inode = self.ialloc(parent_dir.dev, typ);
         let mut idata = inode.ilock();
         idata.dinode.major = major;
         idata.dinode.minor = minor;
@@ -200,10 +200,10 @@ impl InodeTable {
         idata.iupdate();
 
         if typ == InodeType::Directory {
-            // Create . and .. entries.
+            // Create . and .. entries if the new inode is a directory.
             // No nlink++ for "." because avoid cyclic ref count.
-            dirdata.dinode.nlink += 1; // for ".."
-            dirdata.iupdate();
+            parent_dirdata.dinode.nlink += 1; // for ".."
+            parent_dirdata.iupdate();
 
             let mut name = [0u8; DIRSIZ];
             name[0] = b'.';
@@ -212,22 +212,22 @@ impl InodeTable {
                 .expect("create: create with '.'");
             name[1] = b'.';
             idata
-                .dirlink(&name, inode.inum)
+                .dirlink(&name, parent_dir.inum)
                 .expect("create: create with '..'");
         }
         drop(idata);
 
-        // link the new inode into the parent dir.
-        dirdata.dirlink(&name, inode.inum).expect(
+        // link the new inode into the parent parent_dir.
+        parent_dirdata.dirlink(&basename, inode.inum).expect(
             format!(
                 "create: dirlink name={} inum={}",
-                unsafe { from_utf8_unchecked(&name) },
+                unsafe { from_utf8_unchecked(&basename) },
                 inode.inum
             )
             .as_str(),
         );
-        drop(dirdata);
-        drop(dir);
+        drop(parent_dirdata);
+        drop(parent_dir);
 
         inode
     }
@@ -387,9 +387,9 @@ impl InodeTable {
     /// Copy the next path element from path into name.
     /// Return the offset following the copied one.
     /// Examples:
-    ///     skip_elem("a/bb/c", name) = 1, setting name = "a"
-    ///     skip_elem("///a//bb", name) = 5, setting name = "a"
-    ///     skip_elem("a", name) = 0, setting name = "a"
+    ///     skip_elem("a/bb/c", name) = 2, setting name = "a"
+    ///     skip_elem("///a//bb", name) = 6, setting name = "a"
+    ///     skip_elem("a", name) = 1, setting name = "a"
     ///     skip_elem("", name) = skip_elem("////", name) = 0
     fn skip_elem(&self, path: &[u8], mut cur: usize, name: &mut [u8; DIRSIZ]) -> usize {
         while path[cur] == b'/' {
@@ -690,9 +690,14 @@ impl InodeData {
                 continue;
             }
 
-            // compare two slices
-            if &de.name == name {
-                return Some((INODE_TABLE.iget(dev, de.inum as u32), off));
+            // compare two names
+            for i in 0..DIRSIZ {
+                if de.name[i] != name[i] {
+                    break;
+                }
+                if de.name[i] == 0 {
+                    return Some((INODE_TABLE.iget(dev, de.inum as u32), off));
+                }
             }
         }
 
@@ -894,6 +899,13 @@ mod tests {
     #[test_case]
     fn skip_elem_init() {
         let mut name = [0u8; DIRSIZ];
+        let cur = INODE_TABLE.skip_elem(&[b'a', b'/', b'b', b'b', b'/', b'c'], 0, &mut name);
+        assert_eq!(2, cur);
+        let mut exp_name = [0u8; DIRSIZ];
+        exp_name[0] = b'a';
+        assert_eq!(&exp_name, &name);
+
+        let mut name = [0u8; DIRSIZ];
         let cur = INODE_TABLE.skip_elem(&[b'/', b'i', b'n', b'i', b't', 0], 0, &mut name);
         assert_eq!(5, cur);
 
@@ -1013,6 +1025,13 @@ mod tests {
         assert_eq!(cwd.dev, inode.dev);
         assert_eq!(cwd.inum, inode.inum);
         drop(inode);
+
+        let mut exp_name: [u8; DIRSIZ] = [0; DIRSIZ];
+        exp_name[0] = b'i';
+        exp_name[1] = b'n';
+        exp_name[2] = b'i';
+        exp_name[3] = b't';
+        assert_eq!(&exp_name, &name);
     }
 
     #[test_case]
@@ -1044,6 +1063,46 @@ mod tests {
         ];
         let inode = INODE_TABLE.create(&path, InodeType::File, 0, 0);
         assert!(INODE_TABLE.unlink(&path).is_ok());
+        drop(inode);
+        LOG.end_op();
+    }
+
+    #[test_case]
+    fn test_create_dir() {
+        LOG.begin_op();
+        // create a new dir
+        let new_dir_path = [b'c', b'r', b'e', b'a', b't', b'e', b'd', b'i', b'r', 0];
+        let inode = INODE_TABLE.create(&new_dir_path, InodeType::Directory, 0, 0);
+        drop(inode);
+        let inode = INODE_TABLE.namei(&new_dir_path).expect("the dir not found");
+        let new_inum = inode.inum;
+
+        // change directory
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        let root_dir = pdata.cwd.replace(inode);
+        drop(root_dir);
+
+        // lookup the parent
+        // the parent must be the root
+        let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+        let parent = INODE_TABLE
+            .nameiparent(
+                &[
+                    b'.', b'.', b'/', b'c', b'r', b'e', b'a', b't', b'e', b'd', b'i', b'r', 0,
+                ],
+                &mut name,
+            )
+            .expect("lookup");
+        assert_eq!(1u32, parent.inum);
+
+        // tidy up
+        // change the current directory
+        let pdata = unsafe { CPU_TABLE.my_proc() }.data.get_mut();
+        let root = INODE_TABLE
+            .namei(&[b'/', 0])
+            .expect("cannot find root inode by b'/'");
+        let inode = pdata.cwd.replace(root).unwrap();
+        assert_eq!(new_inum, inode.inum);
         drop(inode);
         LOG.end_op();
     }
