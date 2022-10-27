@@ -308,6 +308,9 @@ impl InodeTable {
 
     /// Look up and return the inode for a given path name.
     ///
+    /// if parent is true, return the inode for the parent.
+    /// copy the final path element into name.
+    ///
     /// if the path begins with a slash, evalution begins at the root, otherwise, the current
     /// directory.
     ///
@@ -330,8 +333,9 @@ impl InodeTable {
     /// only after receiving the inode from `dirlookup` does `namex` release the lock on the
     /// directory. now another thread may unlink the inode from the directory but xv6 will not
     /// delete the inode yet, because the reference count of the inode is still larger than zero.
+    ///
     /// Another risk is deadlock. for example, `next` points to the same inode as `inode` when
-    /// locking up ".". locking `next` before releasing the lock on `inode` would result in a
+    /// looking up ".". locking `next` before releasing the lock on `inode` would result in a
     /// deadlock. to avoid this deadlock, `namex` unlocks the directory before obtaining a lock on
     /// `next`. here again we see why the separation between `iget` and `ilock` is important.
     pub fn namex(&self, path: &[u8], name: &mut [u8; DIRSIZ], parent: bool) -> Option<Inode> {
@@ -364,6 +368,10 @@ impl InodeTable {
 
             match idata.dirlookup(name) {
                 Some((next, _)) => {
+                    // unlocking the inode avoids deadlock.
+                    // for example, `next` points to the same inode as `inode` when looking up ".".
+                    // Locking `next` before releasing the lock on `inode` would result in a
+                    // deadlock. so we must release the lock on `inode` here.
                     drop(idata);
                     inode = next;
                 }
