@@ -1132,4 +1132,13 @@ mod tests {
         drop(inode);
         LOG.end_op();
     }
+
+    #[test_case]
+    fn test_unlink_err() {
+        assert_eq!(Err("cannot unlink '.'"), INODE_TABLE.unlink(&[b'.', 0]));
+        assert_eq!(
+            Err("cannot unlink '..'"),
+            INODE_TABLE.unlink(&[b'.', b'.', 0])
+        );
+    }
 }
