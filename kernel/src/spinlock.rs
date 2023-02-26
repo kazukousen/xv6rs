@@ -65,7 +65,7 @@ impl<T: ?Sized> SpinLock<T> {
 
         while self
             .lock
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Acquire)
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {}
         fence(Ordering::SeqCst);
