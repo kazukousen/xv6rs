@@ -75,9 +75,9 @@ pub unsafe fn bootstrap() -> ! {
         pci::init(); // pci
 
         PROCESS_TABLE.user_init(); // first user process
-        STARTED.store(true, Ordering::SeqCst);
+        STARTED.store(true, Ordering::Release);
     } else {
-        while !STARTED.load(Ordering::SeqCst) {}
+        while !STARTED.load(Ordering::Acquire) {}
         println!("hart {} starting...", cpu_id);
         kvm::init_hart(); // turn on paging
         trap::init_hart(); // install kernel trap vector
