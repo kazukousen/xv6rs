@@ -28,18 +28,28 @@ use core::{
 use crate::cpu::{self, CpuTable};
 
 pub struct SpinLock<T: ?Sized> {
-    lock: AtomicBool,
+    // `locked` indicates whether it is locked or not.
+    locked: AtomicBool,
     name: &'static str, // for debugging
     cpu_id: Cell<isize>,
+    // `data` can be mutated (or accessed exclusively) even through the spin lock itself is shared,
+    // we need to use interior mutability, for which we'll use an UnsafeCell.
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
+// UnsafeCell does not implement Sync, which means that SpinLock<T> is now no longer shareable
+// between threads, making it rather useless.
+// To fix that, we need to promise to the compiler, that it is actually safe for our type to be
+// shared between threads.
+// However, since the lock can be used to send values of type T from one thread to another, we must
+// limit this promise to types that are safe to send between threads.
+// So, we implement Sync for SpinLock<T> for all T that implement Send.
+unsafe impl<T: Send> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
     pub const fn new(data: T, name: &'static str) -> Self {
         Self {
-            lock: AtomicBool::new(false),
+            locked: AtomicBool::new(false),
             name,
             data: UnsafeCell::new(data),
             cpu_id: Cell::new(-1),
@@ -64,7 +74,7 @@ impl<T: ?Sized> SpinLock<T> {
         }
 
         while self
-            .lock
+            .locked
             .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
             .is_err()
         {}
@@ -74,7 +84,7 @@ impl<T: ?Sized> SpinLock<T> {
     }
 
     fn holding(&self) -> bool {
-        self.lock.load(Ordering::Acquire) && self.cpu_id.get() == CpuTable::cpu_id() as isize
+        self.locked.load(Ordering::Acquire) && self.cpu_id.get() == CpuTable::cpu_id() as isize
     }
 
     fn release(&self) {
@@ -82,7 +92,7 @@ impl<T: ?Sized> SpinLock<T> {
             panic!("release {}", self.name);
         }
         self.cpu_id.set(-1);
-        self.lock.store(false, Ordering::Release);
+        self.locked.store(false, Ordering::Release);
 
         cpu::pop_off();
     }
