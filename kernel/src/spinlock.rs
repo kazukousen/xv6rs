@@ -65,17 +65,16 @@ impl<T: ?Sized> SpinLock<T> {
 
         while self
             .lock
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
             .is_err()
         {}
-        fence(Ordering::SeqCst);
 
         // record info about lock acquisition for holding()
         self.cpu_id.set(CpuTable::cpu_id() as isize);
     }
 
     fn holding(&self) -> bool {
-        self.lock.load(Ordering::Relaxed) && self.cpu_id.get() == CpuTable::cpu_id() as isize
+        self.lock.load(Ordering::Acquire) && self.cpu_id.get() == CpuTable::cpu_id() as isize
     }
 
     fn release(&self) {
@@ -83,7 +82,6 @@ impl<T: ?Sized> SpinLock<T> {
             panic!("release {}", self.name);
         }
         self.cpu_id.set(-1);
-        fence(Ordering::SeqCst);
         self.lock.store(false, Ordering::Release);
 
         cpu::pop_off();
