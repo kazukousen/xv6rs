@@ -165,7 +165,7 @@ impl IndexMut<usize> for BufData {
 struct BufMetaLru {
     inner: [BufMeta; NBUF],
     head: *mut BufMeta, // most-recently-used
-    tail: *mut BufMeta,
+    tail: *mut BufMeta, // least-recently-used
 }
 
 // https://doc.rust-lang.org/nomicon/send-and-sync.html
@@ -196,6 +196,9 @@ impl BufMetaLru {
         }
     }
 
+    // Find blocks in the order of the most recently referenced block.
+    // The basic idea is based on the concept that "blocks that were frequently accessed in the
+    // past are more likely to be accessed frequently in the future".
     fn find(&self, dev: u32, blockno: u32) -> Option<(usize, *mut usize)> {
         let mut b = self.head;
 
@@ -257,6 +260,7 @@ impl BufMetaLru {
     }
 }
 
+// doubly linked list
 struct BufMeta {
     index: usize,
     dev: u32,

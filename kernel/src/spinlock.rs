@@ -44,7 +44,7 @@ pub struct SpinLock<T: ?Sized> {
 // However, since the lock can be used to send values of type T from one thread to another, we must
 // limit this promise to types that are safe to send between threads.
 // So, we implement Sync for SpinLock<T> for all T that implement Send.
-unsafe impl<T: Send> Sync for SpinLock<T> {}
+unsafe impl<T> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
     pub const fn new(data: T, name: &'static str) -> Self {
