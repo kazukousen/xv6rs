@@ -124,7 +124,9 @@ impl E1000 {
         // Reset the device
         write_e1000_regs(E1000_IMS, 0); // disable interrupts
 
+        // Transmit initialization
         self.tx_init();
+        // Receive initialization
         self.rx_init();
 
         // MAC address of qemu (52:54:00:12:34:56)
@@ -173,7 +175,7 @@ impl E1000 {
     }
 
     pub fn send(&mut self, mut m: Box<MBuf>) -> Result<(), &str> {
-        // For transmitting, first get the current ring position, using E1000_TDT.
+        // For transmitting, first get the current ring tail position, using E1000_TDT.
         let pos = read_e1000_regs(E1000_TDT) as usize;
 
         // Then check if the ring is overflowing. If E1000_TXD_STAT_DD is not set in the current
@@ -230,14 +232,15 @@ impl SpinLock<E1000> {
     }
 
     fn recv(&self) {
+        let mut guard = self.lock();
         // First get the next ring position, using E1000_RDT plus one modulo RX_RING_SIZE.
         let mut pos = (read_e1000_regs(E1000_RDT) + 1) as usize % RX_RING_SIZE;
         loop {
-            let mut guard = self.lock();
             let tail = &guard.rx_ring[pos];
             // Then check if a new packet is available by checking for the E1000_RXD_STAT_DD bit in
             // the status portion of the descriptor. If not, stop.
             if tail.status & E1000_RXD_STAT_DD == 0 {
+                // no packet
                 drop(guard);
                 break;
             }
@@ -260,10 +263,11 @@ impl SpinLock<E1000> {
             // Finally, update the E1000_RDT register to be the position of the last ring
             // descriptor processed.
             write_e1000_regs(E1000_RDT, pos as u32);
-            drop(guard);
 
             // deriver the mbuf to network stack
+            drop(guard);
             net::rx(m);
+            guard = self.lock();
 
             pos = (read_e1000_regs(E1000_RDT) + 1) as usize % RX_RING_SIZE;
         }

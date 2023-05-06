@@ -64,7 +64,7 @@ impl PageTable {
     }
 
     pub fn as_satp(&self) -> usize {
-        (8 << 60) | ((self as *const PageTable as usize) >> 12)
+        (1 << 63) | ((self as *const PageTable as usize) >> 12)
     }
 
     /// Allocate a new user page table.
