@@ -143,6 +143,11 @@ pub fn load(
     let mut sp = size;
     let stackbase = sp - PAGESIZE;
 
+    // the arguments laid out ...
+    //
+    //  | &argv[0] | &argv[1] | ... | 0 | argv[n][0] | ... | argv[1][m] | argv[0][0] | argv[0][m] | ...
+    // ^ sp, and the second argument (`a1` register)
+
     // Push argument strings, prepare rest of stack in ustack.
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut argc = 0;
@@ -153,39 +158,37 @@ pub fn load(
             break;
         }
         let arg = arg.unwrap();
-        let count = arg.iter().position(|v| *v == 0).unwrap() + 1;
-        sp -= count;
+        let arg_size = arg.iter().position(|v| *v == 0).unwrap() + 1;
+        sp -= arg_size;
         sp -= sp % 16; // riscv sp must be 16-byte aligned.
         if sp < stackbase {
             pgt.unmap_user_page_table(size);
             return Err("pushing arguments causes stack over flow");
         }
-        if let Err(msg) = pgt.copy_out(sp, arg.as_ptr(), count) {
+        // copy out argv[i]'s data to the virtual address pointed to by `sp`.
+        if let Err(msg) = pgt.copy_out(sp, arg.as_ptr(), arg_size) {
             pgt.unmap_user_page_table(size);
             return Err(msg);
         };
         ustack[i] = sp;
     }
-    // ustack[argc] = 0;
 
     // push the array of argv[] pointers.
-    sp -= (argc + 1) * mem::size_of::<usize>();
+    let ustack_size = (argc + 1) * mem::size_of::<usize>(); // ustack[argc] = 0;
+    sp -= ustack_size;
     sp -= sp % 16;
     if sp < stackbase {
         pgt.unmap_user_page_table(size);
         return Err("pushing arguments causes stack over flow");
     }
-    if let Err(msg) = pgt.copy_out(
-        sp,
-        ustack.as_ptr() as *const u8,
-        (argc + 1) * mem::size_of::<usize>(),
-    ) {
+    if let Err(msg) = pgt.copy_out(sp, ustack.as_ptr() as *const u8, ustack_size) {
         pgt.unmap_user_page_table(size);
         return Err(msg);
     }
 
     // arguments to user main(argc, argv)
     let tf = unsafe { p.trapframe.as_mut().unwrap() };
+    // pass the pointer of the array of argv[] pointers as the second argument in user space
     tf.a1 = sp;
 
     // comit to the user image
@@ -196,6 +199,7 @@ pub fn load(
     tf.sp = sp;
     oldpgt.unmap_user_page_table(oldsz);
 
+    // pass the `argc` as the first argument in user space
     Ok(argc)
 }
 
