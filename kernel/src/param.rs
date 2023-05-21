@@ -25,19 +25,19 @@ pub const KSTACK_SIZE: usize = PAGESIZE * 4;
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
-// VirtAddr 0x3ffffff000
-pub const TRAMPOLINE: usize = MAXVA - PAGESIZE;
+pub const TRAMPOLINE: usize = MAXVA - PAGESIZE; // 0x003f_ffff_f000
 
 // User memory layout.
-// Address zero first:
+// # 0x0000_0000_0000
 //   text
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
 //   ...
+//   virtual memory area
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
-// VirtAddr 0x3fffffe000
+// # 0x003f_ffff_e000
 pub const TRAPFRAME: usize = TRAMPOLINE - PAGESIZE;
 
 // virtio mmio interface

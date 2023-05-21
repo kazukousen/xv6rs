@@ -8,10 +8,12 @@ use crate::{
     fs::{FileStat, InodeType, INODE_TABLE},
     log::LOG,
     net::SockAddr,
+    page_table::{align_down, PteFlag},
+    param::PAGESIZE,
     process::PROCESS_TABLE,
 };
 
-use super::{elf, Proc, MAXARG, MAXARGLEN};
+use super::{elf, MapFlag, Proc, MAXARG, MAXARGLEN, VMA};
 
 type SysResult = Result<usize, &'static str>;
 
@@ -127,6 +129,14 @@ pub trait Syscall {
     /// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     /// Establish a connection with another socket.
     fn sys_connect(&mut self) -> SysResult; // 26
+
+    /// void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
+    /// returns that address, or 0xffff_ffff_ffff_ffff if it fails.
+    ///
+    /// A file mapping maps a region of a file directly into the calling process's virtual memory.
+    /// Once a file is mapped, its contents can be accessed by operations on the bytes in the
+    /// corresponding memory region.
+    fn sys_mmap(&mut self) -> SysResult; // 27
 }
 
 impl Syscall for Proc {
@@ -481,5 +491,53 @@ impl Syscall for Proc {
         soc.connect(&sock_addr)?;
 
         Ok(0)
+    }
+
+    /// 27
+    /// This syscall func does not allocate physical memory or read the file, just add new VMA
+    /// entry. Instead, do that in page fault handler.
+    fn sys_mmap(&mut self) -> SysResult {
+        // args
+        // arg 0 `addr`
+        let size = self.arg_i32(1)? as usize;
+        let prot = self.arg_i32(2)? as usize;
+        let prot = PteFlag::from_bits(prot).ok_or("sys_mmap: cannot parse prot")?;
+        let flags = self.arg_i32(3)? as usize;
+        let flags = MapFlag::from_bits(flags).ok_or("sys_mmap: cannot parse flags")?;
+        let fd = self.arg_i32(4)?;
+
+        let pdata = unsafe { &mut *self.data.get() };
+
+        if fd != -1 {
+            let f = pdata.o_files[fd as usize]
+                .as_ref()
+                .ok_or("sys_mmap: file not found")?;
+
+            if (PteFlag::WRITE.bits() & prot.bits() > 0) && !f.writable {
+                return Err("sys_mmap: file is read-only, but mmap has write permission and flag");
+            }
+        }
+
+        let addr_end = pdata.cur_max;
+        let addr_start = align_down(addr_end - size, PAGESIZE);
+
+        pdata
+            .vm_area
+            .iter_mut()
+            .find(|vm| {
+                return vm.is_none();
+            })
+            .ok_or("cannot find unused vma")?
+            .replace(VMA {
+                addr_start,
+                addr_end,
+                size,
+                prot,
+                flags,
+                fd,
+            });
+        pdata.cur_max = addr_start;
+
+        return Ok(addr_start);
     }
 }

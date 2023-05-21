@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use crate::{
     fs::{InodeData, INODE_TABLE},
     log::LOG,
-    page_table::PageTable,
+    page_table::{align_up, PageTable},
     param::PAGESIZE,
     proc::ProcData,
     sleeplock::SleepLockGuard,
@@ -54,6 +54,7 @@ pub fn load(
         return Err("elf magic invalid");
     }
 
+    // Allocate a new user page table with 2 pages (trampoline and trapframe).
     let mut pgt = match PageTable::alloc_user_page_table(p.trapframe as usize) {
         None => {
             drop(idata);
@@ -254,9 +255,4 @@ struct ProgHeader {
     filesz: u64,
     memsz: u64,
     align: u64,
-}
-
-#[inline]
-pub fn align_up(addr: usize, align: usize) -> usize {
-    (addr + (align - 1)) & !(align - 1)
 }

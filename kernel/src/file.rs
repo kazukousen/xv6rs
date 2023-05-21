@@ -1,7 +1,7 @@
 //! A cool aspect of the Unix interface is that most resources in Unix are represented as files,
 //! including devices such as the console, pipes, and of course, real files. The file descriptor
 //! layer is the layer that archives this uniformity.
-use core::cell::UnsafeCell;
+use core::{cell::UnsafeCell, panic};
 
 use alloc::{boxed::Box, sync::Arc};
 
@@ -30,7 +30,7 @@ pub struct File {
     // A file can be open for reading or writing or both. The `readable` and `writable` fields
     // track this.
     pub readable: bool,
-    writable: bool,
+    pub writable: bool,
     inner: FileInner,
 }
 
@@ -266,6 +266,19 @@ impl File {
         match &self.inner {
             FileInner::Socket(s) => Some(s),
             _ => None,
+        }
+    }
+
+    pub fn seek(&self, offset: usize) {
+        match &self.inner {
+            FileInner::Inode(ref f) => {
+                // When updating atomically the read and write offsets, the inode must be locked.
+                let idata = f.inode.as_ref().unwrap().ilock();
+                let current = unsafe { &mut (*f.offset.get()) };
+                *current = offset;
+                drop(idata);
+            }
+            _ => panic!("file: seek() is only available on File"),
         }
     }
 }

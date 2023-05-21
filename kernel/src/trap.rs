@@ -109,6 +109,17 @@ unsafe fn handle_trap(is_user: bool) {
             let p = CPU_TABLE.my_proc();
             p.syscall();
         }
+        ScauseType::ExcPageLoad | ScauseType::ExcPageStoreAtomic => {
+            if is_user {
+                let fault_addr = register::stval::read();
+                if let Err(e) = CPU_TABLE.my_proc().data.get_mut().lazy_mmap(fault_addr) {
+                    panic!(
+                        "handle_trap: failed to lazy allocate. {}. scause {:?} stval {:#x}",
+                        e, scause, fault_addr
+                    );
+                }
+            }
+        }
         ScauseType::Unknown(v) => {
             panic!(
                 "handle_trap: scause {:#x} stval {:#x} is_user={}",

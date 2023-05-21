@@ -13,6 +13,11 @@ static mut KERNEL_PAGE_TABLE: PageTable = PageTable::empty();
 
 pub unsafe fn init_hart() {
     satp::write(KERNEL_PAGE_TABLE.as_satp());
+    // Each RISC-V core caches page table entries in a TLB. so when our OS changes a page table,
+    // it must tell the CPU to invalidate corresponding cached TLB entries.
+    //
+    // after reloading the satp register, we must execute sfence.vma instruction to flush the
+    // current core's TLB.
     asm!("sfence.vma zero, zero");
 }
 
