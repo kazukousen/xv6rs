@@ -20,7 +20,7 @@ fn main(_: &mut Args) -> Result<i32, &'static str> {
         sys_open("console\0", O_RDWR);
     }
 
-    sys_dup(0); // stdio
+    sys_dup(0); // stdout
     sys_dup(0); // stderr
     loop {
         println!("init: starting sh");
