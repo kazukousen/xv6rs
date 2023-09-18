@@ -73,6 +73,7 @@ pub fn strlen(mut c: *const u8) -> usize {
     pos
 }
 
+/// wrapper so that it's ok main() does not call sys_exit()
 #[macro_export]
 macro_rules! entry_point {
     ($path:path) => {
@@ -137,6 +138,8 @@ extern "C" fn _start() {
 
 #[cfg(test)]
 mod tests {
+    use core::ptr;
+
     use crate::{
         fcntl::{O_CREATE, O_RDWR, O_WRONLY},
         syscall::{sys_chdir, sys_close, sys_mkdir, sys_open, sys_unlink, sys_write},
@@ -150,5 +153,22 @@ mod tests {
         assert!(sys_chdir("iputdir\0") >= 0);
         assert!(sys_unlink("../iputdir\0") >= 0);
         assert!(sys_chdir("/\0") >= 0);
+    }
+
+    #[test_case]
+    fn write_bytes() {
+        let mut buf: [u8; 4] = [0; 4];
+        buf[0] = b'a';
+        buf[1] = b'b';
+        buf[2] = b'c';
+        buf[3] = b'd';
+
+        assert_eq!(&buf, &[b'a', b'b', b'c', b'd']);
+
+        unsafe {
+            ptr::write_bytes(buf.as_mut_ptr(), 0, 2);
+        }
+
+        assert_eq!(&buf, &[0, 0, b'c', b'd']);
     }
 }
