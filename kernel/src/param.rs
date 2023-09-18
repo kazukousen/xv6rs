@@ -18,7 +18,7 @@ pub const E1000_IRQ: usize = 33;
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.
 pub const KERNBASE: usize = 0x8000_0000;
-pub const PHYSTOP: usize = KERNBASE + 128 * 1024 * 1024;
+pub const PHYSTOP: usize = KERNBASE + 1 * 1024 * 1024 * 1024;
 pub const PAGESIZE: usize = 4096;
 pub const MAXVA: usize = 1 << (9 + 9 + 9 + 12 - 1);
 pub const KSTACK_SIZE: usize = PAGESIZE * 4;
