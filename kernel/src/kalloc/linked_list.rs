@@ -47,13 +47,26 @@ impl LinkedListAllocator {
     /// Adds the given memory region to the front of the list.
     unsafe fn add_free_region(&mut self, addr: usize, size: usize) {
         // ensure that the freed region is capable of holding ListNode
-        assert_eq!(Self::align_up(addr, mem::align_of::<ListNode>()), addr);
-        assert!(size >= mem::size_of::<ListNode>());
-
+        // In the original code, it expected the address to be already aligned
+        // However, unaligned addresses can be passed in practice
+        // So we align the address and adjust the size accordingly
+        
+        let aligned_addr = Self::align_up(addr, mem::align_of::<ListNode>());
+        
+        // Calculate size reduction due to alignment
+        let size_reduction = aligned_addr - addr;
+        
+        // If the size after alignment is too small, it's an error
+        // This prevents memory regions from being lost
+        assert!(size > size_reduction);
+        assert!(size - size_reduction >= mem::size_of::<ListNode>());
+        
+        let adjusted_size = size - size_reduction;
+        
         // Create a new list node and append it at the start of the list
-        let mut node = ListNode::new(size);
+        let mut node = ListNode::new(adjusted_size);
         node.next = self.head.next.take();
-        let node_ptr = addr as *mut ListNode;
+        let node_ptr = aligned_addr as *mut ListNode;
         node_ptr.write(node);
         self.head.next = Some(&mut *node_ptr);
     }

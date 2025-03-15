@@ -7,7 +7,7 @@ ifdef CARGO_RELEASE
 	TARGET = target/$(CARGO_TARGET)/release
 	MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/release
 endif
-CARGO ?= cargo
+CARGO ?= cargo +nightly
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 

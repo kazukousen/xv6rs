@@ -131,6 +131,7 @@ impl Socket {
                 // setup a mbuf and copy data from user space
                 let mut m = MBuf::alloc(ethernet::HEADER_SIZE + ip::HEADER_SIZE + udp::HEADER_SIZE);
                 m.append(len);
+                
                 let p = unsafe { CPU_TABLE.my_proc() };
                 p.data.get_mut().copy_in(m.get_buf_head(), addr, len)?;
                 udp::send(m, self.cb_idx)?;

@@ -1,5 +1,7 @@
 /target
 fs.img
+fs.test.img
+packets.pcap
 
 # Added by cargo
 #
