@@ -121,7 +121,7 @@ The OS implements standard Unix system calls:
 - Process management: fork, exit, wait, exec
 - File operations: open, read, write, close, unlink, mkdir, chdir, fstat
 - Network operations: socket, bind, connect
-- Memory management: mmap
+- Memory management: [mmap](docs/mmap_implementation.md) - Maps files or devices into memory using lazy loading
 
 ## User Program Implementation
 
