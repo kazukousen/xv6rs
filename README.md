@@ -75,14 +75,11 @@ make qemu
 ### Run Tests
 
 ```sh
-# Run tests in debug mode (may encounter issues)
+# Run tests (always in release mode)
 make test
-
-# Run tests in release mode (recommended)
-CARGO_RELEASE=1 make test
 ```
 
-> **Important**: It is recommended to run tests in release mode using the `CARGO_RELEASE=1` flag. 
+> **Note**: Tests always run in release mode by default. 
 > The release mode compilation helps avoid certain issues that may occur in debug mode:
 >
 > 1. **Compiler Optimizations**: Release mode enables various optimizations that can prevent certain runtime issues, particularly in low-level code that interacts directly with hardware.

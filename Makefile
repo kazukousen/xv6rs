@@ -1,12 +1,8 @@
 CARGO_TARGET = riscv64imac-unknown-none-elf
 CARGO_MKFS_TARGET ?= $(shell rustup show | sed -n 's/^Default host: \(.*\)/\1/p')
-TARGET = target/$(CARGO_TARGET)/debug
-MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/debug
-ifdef CARGO_RELEASE
-	RELEASE = --release
-	TARGET = target/$(CARGO_TARGET)/release
-	MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/release
-endif
+RELEASE = --release
+TARGET = target/$(CARGO_TARGET)/release
+MKFS_TARGET = target/$(CARGO_MKFS_TARGET)/release
 CARGO ?= cargo +nightly
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
