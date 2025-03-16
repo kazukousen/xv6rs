@@ -121,7 +121,9 @@ The OS implements standard Unix system calls:
 - Process management: fork, exit, wait, exec
 - File operations: open, read, write, close, unlink, mkdir, chdir, fstat
 - Network operations: socket, bind, connect
-- Memory management: [mmap](docs/mmap_implementation.md) - Maps files or devices into memory using lazy loading
+- Memory management: 
+  - [mmap](docs/mmap_implementation.md) - Maps files or devices into memory using lazy loading
+  - [sbrk](docs/userland_memory_allocation.md) - Allocates memory for userland programs, enabling heap allocation
 
 ## User Program Implementation
 
@@ -132,7 +134,7 @@ User programs in xv6rs are implemented in Rust with the following characteristic
 1. **No Standard Library**: All programs use `#![no_std]` attribute since they run in a bare-metal environment without the Rust standard library.
 2. **Entry Point**: Programs use the `entry_point!` macro which sets up the proper entry point and argument handling.
 3. **System Call Interface**: Programs interact with the kernel through system calls defined in `user/src/syscall.rs`.
-4. **No Heap Allocation**: User programs cannot use heap allocation (like `Box`, `Vec`, etc.) as there is no global allocator in the user environment.
+4. **Heap Allocation Support**: User programs can use heap allocation (like `Box`, `Vec`, etc.) through the custom global allocator implemented in the user environment.
 
 ### Basic Structure of a User Program
 

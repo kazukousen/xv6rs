@@ -305,21 +305,21 @@ impl Syscall for Proc {
     fn sys_sbrk(&mut self) -> SysResult {
         let n = self.arg_i32(0)?;
         let pdata = self.data.get_mut();
-        let sz = pdata.sz;
+        let old_sz = pdata.sz; // Save the old size
         if n > 0 {
             pdata.sz = pdata
                 .page_table
                 .as_mut()
                 .unwrap()
-                .uvm_alloc(sz, sz + n as usize)?;
+                .uvm_alloc(old_sz, old_sz + n as usize)?;
         } else if n < 0 {
             pdata.sz = pdata
                 .page_table
                 .as_mut()
                 .unwrap()
-                .uvm_dealloc(sz, sz + n as usize)?;
+                .uvm_dealloc(old_sz, old_sz + n as usize)?;
         }
-        Ok(0)
+        Ok(old_sz) // Return the old size (start address of the new memory)
     }
 
     /// 15
