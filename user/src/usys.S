@@ -123,3 +123,23 @@ __mmap:
  li a7, 27
  ecall
  ret
+.global __getenv
+__getenv:
+ li a7, 28
+ ecall
+ ret
+.global __setenv
+__setenv:
+ li a7, 29
+ ecall
+ ret
+.global __unsetenv
+__unsetenv:
+ li a7, 30
+ ecall
+ ret
+.global __listenv
+__listenv:
+ li a7, 31
+ ecall
+ ret

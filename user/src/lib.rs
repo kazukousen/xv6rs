@@ -142,11 +142,11 @@ extern "C" fn _start() {
 
 #[cfg(test)]
 mod tests {
-    use core::ptr;
+    use core::{ptr, str::from_utf8_unchecked};
 
     use crate::{
         fcntl::{O_CREATE, O_RDWR, O_WRONLY},
-        syscall::{sys_chdir, sys_close, sys_mkdir, sys_open, sys_unlink, sys_write},
+        syscall::{sys_chdir, sys_close, sys_getenv, sys_listenv, sys_mkdir, sys_open, sys_setenv, sys_unlink, sys_unsetenv, sys_write},
     };
 
     use super::*;
@@ -174,5 +174,28 @@ mod tests {
         }
 
         assert_eq!(&buf, &[0, 0, b'c', b'd']);
+    }
+    
+    #[test_case]
+    fn test_env_basic() {
+        // Simple test for environment variables
+        
+        // Set a variable
+        let result = sys_setenv("TEST_ENV", "test_value", true);
+        assert!(result >= 0, "sys_setenv failed");
+        
+        // Get the variable
+        let mut buf = [0u8; 64];
+        let len = sys_getenv("TEST_ENV", &mut buf);
+        assert!(len >= 0, "sys_getenv failed");
+        
+        // List environment variables
+        let mut list_buf = [0u8; 128];
+        let list_len = sys_listenv(&mut list_buf);
+        assert!(list_len >= 0, "sys_listenv failed");
+        
+        // Unset the variable
+        let unset_result = sys_unsetenv("TEST_ENV");
+        assert!(unset_result >= 0, "sys_unsetenv failed");
     }
 }
