@@ -345,11 +345,15 @@ impl InodeTable {
             let cwd = unsafe { CPU_TABLE.my_proc().data.get_mut().cwd.as_ref().unwrap() };
             self.idup(cwd)
         };
+        
         let mut path_pos = 0;
         loop {
             path_pos = self.skip_elem(path, path_pos, name);
+            
+            // If we've reached the end of the path or there are no more path elements
             if path_pos == 0 {
-                break;
+                // For paths like "/" or empty path elements at the end
+                return Some(inode);
             }
 
             // inode type is not guaranteed to have been loaded from disk until `ilock` runs.
@@ -381,8 +385,6 @@ impl InodeTable {
                 }
             }
         }
-
-        Some(inode)
     }
 
     /// Lookup and return the inode for a pathname.
