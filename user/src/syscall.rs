@@ -1,5 +1,5 @@
 use crate::{fstat::FileStat, net::SockAddr};
-use core::{mem, ptr};
+use core::mem;
 
 extern "C" {
     /// 1
@@ -102,9 +102,8 @@ pub fn sys_read(fd: i32, buf: &mut [u8]) -> i32 {
 }
 
 // 7
-pub fn sys_exec(path: &str) -> i32 {
-    let argv: [*const u8; 2] = [path.as_ptr(), ptr::null()];
-    unsafe { __exec(path.as_ptr(), argv.as_ptr()) }
+pub fn sys_exec(argv: &[*const u8]) -> i32 {
+    unsafe { __exec(argv[0], argv.as_ptr()) }
 }
 
 // 8
