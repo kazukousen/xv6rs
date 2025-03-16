@@ -5,6 +5,10 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(alloc_error_handler)]
 
+// External crates
+extern crate alloc;
+
+pub mod allocator;
 pub mod fcntl;
 pub mod fstat;
 pub mod net;

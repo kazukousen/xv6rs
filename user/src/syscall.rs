@@ -26,6 +26,10 @@ extern "C" {
     /// 10
     /// int dup(int fd)
     fn __dup(fd: i32);
+    /// 12
+    /// char *sbrk(int n)
+    /// Grow process's memory by n bytes. Returns start of new memory.
+    fn __sbrk(n: i32) -> *mut u8;
     /// 15
     /// int open(char *file, int flags)
     fn __open(addr: *const u8, mode: i32) -> i32;
@@ -104,6 +108,11 @@ pub fn sys_chdir(path: &str) -> i32 {
 // 10
 pub fn sys_dup(fd: i32) {
     unsafe { __dup(fd) }
+}
+
+// 12
+pub fn sys_sbrk(n: i32) -> *mut u8 {
+    unsafe { __sbrk(n) }
 }
 
 // 15
