@@ -14,6 +14,64 @@ This document records the implementation of environment variables in the xv6rs o
    - Add assembly stubs
    - Create utility commands
 
+## Implementation Details
+
+### Data Structure
+
+Environment variables are stored in the `ProcData` structure as follows:
+
+```rust
+pub struct ProcData {
+    // ... other fields ...
+    pub env_vars: Option<BTreeMap<String, String>>,
+}
+```
+
+- `env_vars` is an `Option<BTreeMap<String, String>>` that maps environment variable names to their values
+- It is initialized as `None` in `ProcData::new()` and set to `Some(BTreeMap::new())` in `ProcData::init_context()`
+- When a process is forked, environment variables are copied from parent to child
+- When a process is freed, environment variables are cleared
+
+### System Calls
+
+Four system calls have been implemented for environment variable management:
+
+1. `getenv` (syscall number 28)
+   - Arguments: 
+     - `name`: Pointer to null-terminated string containing the variable name
+     - `value`: Pointer to buffer where the value will be stored
+     - `size`: Size of the buffer
+   - Returns: Length of the value, or -1 if the variable doesn't exist
+   - Behavior: Copies the value of the environment variable to the provided buffer
+
+2. `setenv` (syscall number 29)
+   - Arguments:
+     - `name`: Pointer to null-terminated string containing the variable name
+     - `value`: Pointer to null-terminated string containing the variable value
+     - `overwrite`: If non-zero, overwrite existing variable; if zero, don't overwrite
+   - Returns: 0 on success, -1 on error
+   - Behavior: Sets the value of an environment variable
+
+3. `unsetenv` (syscall number 30)
+   - Arguments:
+     - `name`: Pointer to null-terminated string containing the variable name
+   - Returns: 0 on success, -1 if the variable doesn't exist
+   - Behavior: Removes an environment variable
+
+4. `listenv` (syscall number 31)
+   - Arguments:
+     - `buf`: Pointer to buffer where the list will be stored
+     - `size`: Size of the buffer
+   - Returns: Number of bytes written to the buffer, or -1 on error
+   - Behavior: Lists all environment variables in the format "name=value\0name=value\0..."
+
+### Implementation Notes
+
+- Environment variables are stored in kernel memory, not user memory
+- The `fork()` system call copies environment variables from parent to child
+- The `exec()` system call preserves environment variables
+- Environment variables are cleared when a process exits
+
 ## Implementation Steps
 
 ### Step 1: Create Documentation File ✓
