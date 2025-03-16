@@ -1,6 +1,6 @@
 use core::{cell::UnsafeCell, mem, ptr};
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc};
 use array_macro::array;
 use bitflags::bitflags;
 
@@ -163,6 +163,8 @@ pub struct ProcData {
     pub o_files: [Option<Arc<File>>; NOFILE],
     vm_area: [Option<VMA>; 100],
     cur_max: usize,
+    // Environment variables storage
+    pub env_vars: Option<BTreeMap<String, String>>,
 }
 
 /// Each VMA has a range of virtual addresses that shares the same permissions and is backed by the
@@ -202,6 +204,8 @@ impl ProcData {
             // the cur_max is adjusted after we create a new VMA. so next allocation's end address
             // can be set to cur_max.
             cur_max: MAXVA - 2 * PAGESIZE,
+            // Initialize environment variables map as None
+            env_vars: None,
         }
     }
 
@@ -222,6 +226,11 @@ impl ProcData {
         self.context.clear();
         self.context.ra = forkret as usize;
         self.context.sp = self.kstack + KSTACK_SIZE;
+        
+        // Initialize environment variables map
+        if self.env_vars.is_none() {
+            self.env_vars = Some(BTreeMap::new());
+        }
     }
 
     /// initialize the user first process
@@ -458,6 +467,21 @@ impl Proc {
             }
         }
         cdata.cwd = Some(INODE_TABLE.idup(&pdata.cwd.as_ref().unwrap()));
+        
+        // Copy environment variables from parent to child
+        if let Some(parent_env_vars) = &pdata.env_vars {
+            // Initialize child's env_vars if it's None
+            if cdata.env_vars.is_none() {
+                cdata.env_vars = Some(BTreeMap::new());
+            }
+            
+            // Copy environment variables
+            if let Some(child_env_vars) = &mut cdata.env_vars {
+                for (key, value) in parent_env_vars {
+                    child_env_vars.insert(key.clone(), value.clone());
+                }
+            }
+        }
         drop(cguard);
 
         // set parent
@@ -505,6 +529,12 @@ impl Proc {
         drop(pdata.page_table.take());
         pdata.cur_max = MAXVA - 2 * PAGESIZE;
         pdata.sz = 0;
+        
+        // Clear environment variables
+        if let Some(env_vars) = &mut pdata.env_vars {
+            env_vars.clear();
+        }
+        
         inner.state = ProcState::Unused;
         inner.chan = 0;
         inner.pid = 0;
@@ -541,6 +571,10 @@ impl Proc {
             23 => self.sys_bind(),
             26 => self.sys_connect(),
             27 => self.sys_mmap(),
+            28 => self.sys_getenv(),
+            29 => self.sys_setenv(),
+            30 => self.sys_unsetenv(),
+            31 => self.sys_listenv(),
             _ => {
                 panic!("unknown syscall: {}", num);
             }

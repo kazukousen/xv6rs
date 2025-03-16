@@ -1,6 +1,6 @@
 use core::mem;
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, collections::BTreeMap, format, string::ToString};
 use array_macro::array;
 
 use crate::{
@@ -21,6 +21,27 @@ pub trait Syscall {
     /// int fork()
     /// Create a process, return child's PID.
     fn sys_fork(&mut self) -> SysResult; // 1
+    
+    /// int getenv(const char *name, char *value, size_t size)
+    /// Get the value of an environment variable.
+    /// Returns the length of the value, or -1 if the variable doesn't exist.
+    fn sys_getenv(&mut self) -> SysResult; // 28
+    
+    /// int setenv(const char *name, const char *value, int overwrite)
+    /// Set the value of an environment variable.
+    /// If overwrite is 0 and the variable exists, the value is not changed.
+    /// Returns 0 on success, -1 on error.
+    fn sys_setenv(&mut self) -> SysResult; // 29
+    
+    /// int unsetenv(const char *name)
+    /// Remove an environment variable.
+    /// Returns 0 on success, -1 if the variable doesn't exist.
+    fn sys_unsetenv(&mut self) -> SysResult; // 30
+    
+    /// int listenv(char *buf, size_t size)
+    /// List all environment variables in the format "name=value\0name=value\0...".
+    /// Returns the number of bytes written to buf, or -1 on error.
+    fn sys_listenv(&mut self) -> SysResult; // 31
 
     /// int exit(int status)
     /// Terminate the current process; status reported to wait(). No return.
@@ -140,6 +161,166 @@ pub trait Syscall {
 }
 
 impl Syscall for Proc {
+    /// 28
+    fn sys_getenv(&mut self) -> SysResult {
+        // Get arguments: name, value buffer, buffer size
+        let mut name_buf: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let name_len = self.arg_str(0, &mut name_buf)?;
+        let name = core::str::from_utf8(&name_buf[0..name_len])
+            .or_else(|_| Err("sys_getenv: invalid UTF-8 in name"))?;
+        
+        let value_buf_addr = self.arg_raw(1)?;
+        let value_buf_size = self.arg_raw(2)?;
+        
+        // Get the process data
+        let pdata = self.data.get_mut();
+        
+        // Look up the environment variable
+        if let Some(env_vars) = &pdata.env_vars {
+            if let Some(value) = env_vars.get(name) {
+                // Copy the value to the user buffer, but only up to value_buf_size-1 bytes
+                // to leave room for the null terminator
+                let bytes_to_copy = core::cmp::min(value.len(), value_buf_size.saturating_sub(1));
+                
+                if bytes_to_copy > 0 {
+                    pdata.copy_out(
+                        value_buf_addr,
+                        value.as_bytes().as_ptr(),
+                        bytes_to_copy,
+                    )?;
+                    
+                    // Add null terminator
+                    let null_byte: u8 = 0;
+                    pdata.copy_out(
+                        value_buf_addr + bytes_to_copy,
+                        &null_byte as *const u8,
+                        1,
+                    )?;
+                }
+                
+                // Return the actual length of the value
+                Ok(value.len())
+            } else {
+                // Environment variable not found
+                Err("environment variable not found")
+            }
+        } else {
+            // Environment variables map not initialized
+            Err("environment variables not initialized")
+        }
+    }
+    
+    /// 29
+    fn sys_setenv(&mut self) -> SysResult {
+        // Get arguments: name, value, overwrite flag
+        let mut name_buf: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let name_len = self.arg_str(0, &mut name_buf)?;
+        let name = core::str::from_utf8(&name_buf[0..name_len])
+            .or_else(|_| Err("sys_setenv: invalid UTF-8 in name"))?;
+        
+        let mut value_buf: [u8; 1024] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let value_len = self.arg_str(1, &mut value_buf)?;
+        let value = core::str::from_utf8(&value_buf[0..value_len])
+            .or_else(|_| Err("sys_setenv: invalid UTF-8 in value"))?;
+        
+        let overwrite = self.arg_i32(2)? != 0;
+        
+        // Get the process data
+        let pdata = self.data.get_mut();
+        
+        // Initialize env_vars if it's None
+        if pdata.env_vars.is_none() {
+            pdata.env_vars = Some(BTreeMap::new());
+        }
+        
+        // Check if the variable already exists
+        if let Some(env_vars) = &pdata.env_vars {
+            if !overwrite && env_vars.contains_key(name) {
+                // Don't overwrite existing variable
+                return Ok(0);
+            }
+        }
+        
+        // Set the environment variable
+        if let Some(env_vars) = &mut pdata.env_vars {
+            env_vars.insert(name.to_string(), value.to_string());
+        }
+        
+        Ok(0)
+    }
+    
+    /// 30
+    fn sys_unsetenv(&mut self) -> SysResult {
+        // Get argument: name
+        let mut name_buf: [u8; 128] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let name_len = self.arg_str(0, &mut name_buf)?;
+        let name = core::str::from_utf8(&name_buf[0..name_len])
+            .or_else(|_| Err("sys_unsetenv: invalid UTF-8 in name"))?;
+        
+        // Get the process data
+        let pdata = self.data.get_mut();
+        
+        // Remove the environment variable
+        if let Some(env_vars) = &mut pdata.env_vars {
+            if env_vars.remove(name).is_some() {
+                Ok(0)
+            } else {
+                // Environment variable not found
+                Err("environment variable not found")
+            }
+        } else {
+            // Environment variables map not initialized
+            Err("environment variables not initialized")
+        }
+    }
+    
+    /// 31
+    fn sys_listenv(&mut self) -> SysResult {
+        // Get arguments: buffer, buffer size
+        let buf_addr = self.arg_raw(0)?;
+        let buf_size = self.arg_raw(1)?;
+        
+        // Get the process data
+        let pdata = self.data.get_mut();
+        
+        if let Some(env_vars) = &pdata.env_vars {
+            // Calculate the total size needed (for debugging purposes)
+            let mut _total_size = 0;
+            for (name, value) in env_vars {
+                // Format: "name=value\0"
+                _total_size += name.len() + 1 + value.len() + 1;
+            }
+            
+            // Copy environment variables to the buffer
+            let mut offset = 0;
+            for (name, value) in env_vars {
+                // Format: "name=value\0"
+                let entry = format!("{}={}\0", name, value);
+                let entry_bytes = entry.as_bytes();
+                let entry_len = entry_bytes.len();
+                
+                // Check if there's enough space in the buffer
+                if offset + entry_len <= buf_size {
+                    pdata.copy_out(
+                        buf_addr + offset,
+                        entry_bytes.as_ptr(),
+                        entry_len,
+                    )?;
+                    offset += entry_len;
+                } else {
+                    // Buffer is full
+                    break;
+                }
+            }
+            
+            // Return the number of bytes written
+            Ok(offset)
+        } else {
+            // Environment variables map not initialized
+            Ok(0) // Return 0 bytes written
+        }
+    }
+
     /// 1
     fn sys_fork(&mut self) -> SysResult {
         self.fork()
