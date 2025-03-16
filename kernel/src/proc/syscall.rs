@@ -284,33 +284,64 @@ impl Syscall for Proc {
         let pdata = self.data.get_mut();
         
         if let Some(env_vars) = &pdata.env_vars {
-            // Calculate the total size needed (for debugging purposes)
-            let mut _total_size = 0;
-            for (name, value) in env_vars {
-                // Format: "name=value\0"
-                _total_size += name.len() + 1 + value.len() + 1;
-            }
-            
             // Copy environment variables to the buffer
             let mut offset = 0;
             for (name, value) in env_vars {
                 // Format: "name=value\0"
-                let entry = format!("{}={}\0", name, value);
-                let entry_bytes = entry.as_bytes();
-                let entry_len = entry_bytes.len();
                 
-                // Check if there's enough space in the buffer
-                if offset + entry_len <= buf_size {
-                    pdata.copy_out(
-                        buf_addr + offset,
-                        entry_bytes.as_ptr(),
-                        entry_len,
-                    )?;
-                    offset += entry_len;
-                } else {
-                    // Buffer is full
+                // Check if there's enough space in the buffer for name
+                if offset + name.len() > buf_size {
                     break;
                 }
+                
+                // Copy name
+                pdata.copy_out(
+                    buf_addr + offset,
+                    name.as_bytes().as_ptr(),
+                    name.len(),
+                )?;
+                offset += name.len();
+                
+                // Check if there's enough space for '='
+                if offset + 1 > buf_size {
+                    break;
+                }
+                
+                // Copy '='
+                let equal_sign = b'=';
+                pdata.copy_out(
+                    buf_addr + offset,
+                    &equal_sign as *const u8,
+                    1,
+                )?;
+                offset += 1;
+                
+                // Check if there's enough space for value
+                if offset + value.len() > buf_size {
+                    break;
+                }
+                
+                // Copy value
+                pdata.copy_out(
+                    buf_addr + offset,
+                    value.as_bytes().as_ptr(),
+                    value.len(),
+                )?;
+                offset += value.len();
+                
+                // Check if there's enough space for null terminator
+                if offset + 1 > buf_size {
+                    break;
+                }
+                
+                // Copy null terminator
+                let null_byte = 0u8;
+                pdata.copy_out(
+                    buf_addr + offset,
+                    &null_byte as *const u8,
+                    1,
+                )?;
+                offset += 1;
             }
             
             // Return the number of bytes written

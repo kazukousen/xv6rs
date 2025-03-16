@@ -97,21 +97,22 @@ Four system calls have been implemented for environment variable management:
 
 - Extend the `Proc::fork()` method to copy environment variables from parent to child process
 
-### Step 5: Add User-space System Call Interfaces
+### Step 5: Add User-space System Call Interfaces ✓
 
 - Add functions for new system calls to `user/src/syscall.rs`
 
-### Step 6: Add Assembly Stubs
+### Step 6: Add Assembly Stubs ✓
 
 - Add assembly stubs for new system calls to `user/src/usys.S`
 
-### Step 7: Create Utility Commands
+### Step 7: Create Utility Commands ✓
 
 - `user/src/bin/env.rs` - Command to display all environment variables
 - `user/src/bin/export.rs` - Command to set environment variables
 - `user/src/bin/unset.rs` - Command to delete environment variables
 
-### Step 8: Testing
+### Step 8: Testing ✓
 
 - Test basic environment variable setting, getting, and deleting
 - Test environment variable inheritance during fork
+- Added unit tests in `user/src/lib.rs` for all environment variable system calls

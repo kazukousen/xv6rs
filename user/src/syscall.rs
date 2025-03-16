@@ -67,6 +67,18 @@ extern "C" {
         fd: i32,
         offset: usize,
     ) -> usize;
+    /// 28
+    /// int getenv(const char *name, char *value, size_t size)
+    fn __getenv(name: *const u8, value: *mut u8, size: usize) -> i32;
+    /// 29
+    /// int setenv(const char *name, const char *value, int overwrite)
+    fn __setenv(name: *const u8, value: *const u8, overwrite: i32) -> i32;
+    /// 30
+    /// int unsetenv(const char *name)
+    fn __unsetenv(name: *const u8) -> i32;
+    /// 31
+    /// int listenv(char *buf, size_t size)
+    fn __listenv(buf: *mut u8, size: usize) -> i32;
 }
 
 // 1
@@ -182,4 +194,24 @@ pub fn sys_mmap(
     offset: usize,
 ) -> usize {
     unsafe { __mmap(addr, size, prot, flags, fd, offset) }
+}
+
+// 28
+pub fn sys_getenv(name: &str, value: &mut [u8]) -> i32 {
+    unsafe { __getenv(name.as_ptr(), value.as_mut_ptr(), value.len()) }
+}
+
+// 29
+pub fn sys_setenv(name: &str, value: &str, overwrite: bool) -> i32 {
+    unsafe { __setenv(name.as_ptr(), value.as_ptr(), if overwrite { 1 } else { 0 }) }
+}
+
+// 30
+pub fn sys_unsetenv(name: &str) -> i32 {
+    unsafe { __unsetenv(name.as_ptr()) }
+}
+
+// 31
+pub fn sys_listenv(buf: &mut [u8]) -> i32 {
+    unsafe { __listenv(buf.as_mut_ptr(), buf.len()) }
 }
