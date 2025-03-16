@@ -1,12 +1,12 @@
-#![no_std]
-#![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
-#![reexport_test_harness_main = "test_main"]
-#![feature(alloc_error_handler)]
+#![no_std] // Do not use the Rust standard library, suitable for bare-metal or OS development
+#![cfg_attr(test, no_main)] // Use a custom main function for tests
+#![feature(custom_test_frameworks)] // Enable custom test frameworks
+#![test_runner(crate::test_runner)] // Define the test runner function
+#![reexport_test_harness_main = "test_main"] // Re-export the test harness main function
+#![feature(alloc_error_handler)] // Enable custom allocation error handling
 
 // External crates
-extern crate alloc;
+extern crate alloc; // Use the alloc crate for heap allocation
 
 pub mod allocator;
 pub mod fcntl;
@@ -19,7 +19,7 @@ use core::{panic::PanicInfo, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::syscall::sys_exit;
 
-#[panic_handler]
+#[panic_handler] // Custom panic handler for the kernel
 pub fn panic(info: &PanicInfo<'_>) -> ! {
     #[cfg(test)]
     test_panic_handler(info);
@@ -28,11 +28,12 @@ pub fn panic(info: &PanicInfo<'_>) -> ! {
     sys_exit(1)
 }
 
-#[no_mangle]
+#[no_mangle] // Ensure the function name is not mangled, used for abort
 fn abort() -> ! {
     panic!("abort");
 }
 
+/// Struct to handle command-line arguments for user programs
 pub struct Args {
     length: usize,
     args: &'static [*const u8],
@@ -40,6 +41,7 @@ pub struct Args {
 }
 
 impl Args {
+    /// Create a new Args instance from argc and argv
     pub fn new(argc: i32, argv: *const *const u8) -> Self {
         Self {
             length: argc as usize,
@@ -51,6 +53,16 @@ impl Args {
 
 impl Iterator for Args {
     type Item = &'static str;
+    /// Retrieve the next argument as a string, if available
+    ///
+    /// This method advances the position in the argument list and returns
+    /// the current argument as a string slice. It uses unsafe operations
+    /// to convert raw C-style strings to Rust string slices.
+    ///
+    /// # Safety
+    /// The method assumes that the argument pointers are valid and that
+    /// the strings are null-terminated. It uses `from_raw_parts` to create
+    /// a byte slice and `from_utf8_unchecked` to convert it to a string slice.
     fn next(&mut self) -> Option<Self::Item> {
         if self.pos >= self.length {
             return None;
@@ -66,6 +78,7 @@ impl Iterator for Args {
     }
 }
 
+/// Calculate the length of a C-style string
 pub fn strlen(mut c: *const u8) -> usize {
     let mut pos = 0;
     unsafe {
@@ -78,7 +91,7 @@ pub fn strlen(mut c: *const u8) -> usize {
 }
 
 /// wrapper so that it's ok main() does not call sys_exit()
-#[macro_export]
+#[macro_export] // Export the macro for use in other modules
 macro_rules! entry_point {
     ($path:path) => {
         #[export_name = "_start"]
@@ -109,6 +122,7 @@ fn test_panic_handler(info: &PanicInfo<'_>) {
     sys_exit(1);
 }
 
+/// Custom test runner for executing tests
 pub fn test_runner(tests: &[&dyn Testable]) {
     println!("Running {} tests", tests.len());
     for test in tests {
@@ -146,7 +160,10 @@ mod tests {
 
     use crate::{
         fcntl::{O_CREATE, O_RDWR, O_WRONLY},
-        syscall::{sys_chdir, sys_close, sys_getenv, sys_listenv, sys_mkdir, sys_open, sys_setenv, sys_unlink, sys_unsetenv, sys_write},
+        syscall::{
+            sys_chdir, sys_close, sys_getenv, sys_listenv, sys_mkdir, sys_open, sys_setenv,
+            sys_unlink, sys_unsetenv, sys_write,
+        },
     };
 
     use super::*;
@@ -175,25 +192,25 @@ mod tests {
 
         assert_eq!(&buf, &[0, 0, b'c', b'd']);
     }
-    
+
     #[test_case]
     fn test_env_basic() {
         // Simple test for environment variables
-        
+
         // Set a variable
         let result = sys_setenv("TEST_ENV", "test_value", true);
         assert!(result >= 0, "sys_setenv failed");
-        
+
         // Get the variable
         let mut buf = [0u8; 64];
         let len = sys_getenv("TEST_ENV", &mut buf);
         assert!(len >= 0, "sys_getenv failed");
-        
+
         // List environment variables
         let mut list_buf = [0u8; 128];
         let list_len = sys_listenv(&mut list_buf);
         assert!(list_len >= 0, "sys_listenv failed");
-        
+
         // Unset the variable
         let unset_result = sys_unsetenv("TEST_ENV");
         assert!(unset_result >= 0, "sys_unsetenv failed");

@@ -17,7 +17,8 @@ use xv6rs_user::{
 fn exec(buf: &[u8]) -> Result<(), &'static str> {
     let pid = sys_fork();
     if pid == 0 {
-        sys_exec(unsafe { from_utf8_unchecked(&buf) });
+        let cmd = unsafe { from_utf8_unchecked(&buf) };
+        sys_exec(&[cmd.as_ptr(), ptr::null()]);
         return Err("unreachable");
     }
     let mut status = 0i32;

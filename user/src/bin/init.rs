@@ -4,6 +4,8 @@
 #![test_runner(xv6rs_user::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+use core::ptr;
+
 use xv6rs_user::{
     entry_point,
     fcntl::O_RDWR,
@@ -30,7 +32,7 @@ fn main(_: &mut Args) -> Result<i32, &'static str> {
         }
         if pid == 0 {
             let cmd = "sh\0";
-            sys_exec(cmd);
+            sys_exec(&[cmd.as_ptr(), ptr::null()]);
             return Err("exec failed");
         }
 
